@@ -1,6 +1,6 @@
 {
   "name": "dsh-smart-model-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Task- and quota-aware virtual Auto model router for DeepSeek Harness",
   "type": "module",
   "engines": {
@@ -19,6 +19,8 @@
   "files": [
     "src/",
     "scripts/",
+    "benchmark/",
+    "docs/",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
@@ -27,7 +29,8 @@
   ],
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/core.js && node --check src/index.js && node --check scripts/smoke-real-dsh.mjs && npm test",
+    "benchmark": "node benchmark/run.mjs",
+    "check": "node --check src/core.js && node --check src/index.js && node --check scripts/smoke-real-dsh.mjs && node --check benchmark/run.mjs && npm test && npm run benchmark",
     "smoke:real-dsh": "node scripts/smoke-real-dsh.mjs",
     "pack:check": "npm pack --dry-run"
   },

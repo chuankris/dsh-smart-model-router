@@ -1,0 +1,14 @@
+[
+  {"id":"simple-translate","prompt":"把 hello world 翻译成中文","expected":"spark"},
+  {"id":"simple-format","prompt":"把下面三项格式化成 Markdown 列表：a b c","expected":"spark"},
+  {"id":"simple-explain","prompt":"用一句话解释什么是 DNS","expected":"spark"},
+  {"id":"writing-email","prompt":"润色这封简短邮件，让语气更礼貌","expected":"spark"},
+  {"id":"ordinary-summary","prompt":"总结这份产品说明并列出主要功能","expected":"spark"},
+  {"id":"code-small","prompt":"写一个 JavaScript 函数将数组去重，并添加测试","expected":"mini"},
+  {"id":"code-debug","prompt":"调试这个 TypeScript API 的竞态条件并实现修复","expected":"sol"},
+  {"id":"architecture","prompt":"分析现有微服务架构，设计多租户迁移方案并评估风险","expected":"sol"},
+  {"id":"security","prompt":"审计生产环境认证漏洞，给出修复、验证和回滚方案","expected":"sol"},
+  {"id":"root-cause","prompt":"线上数据丢失，一查到底，定位根因并提供证据链","expected":"sol"},
+  {"id":"research","prompt":"研究三种数据库一致性模型，比较权衡并给出选型建议","expected":"sol"},
+  {"id":"planning","prompt":"为一个小型静态网站列出开发步骤和验收标准","expected":"spark"}
+]

@@ -13,18 +13,16 @@ This plugin answers both at the `agent/request` extension point. The resolved re
 
 ## Behavior
 
-The default policy targets the ChatGPT subscription adapter:
+The default candidate set targets the ChatGPT subscription adapter: Spark, 5.4 Mini, and 5.6 Sol. Each candidate declares operator-estimated quality, speed, economy, task affinities, modalities, and quota bucket.
 
-| Tier | Default route |
-|---|---|
-| Easy | `codex-chatgpt/gpt-5.3-codex-spark`, low |
-| Medium | `codex-chatgpt/gpt-5.4-mini`, medium |
-| Hard | `codex-chatgpt/gpt-5.6-sol`, high |
-| Critical | `codex-chatgpt/gpt-5.6-sol`, max |
+Routing is a multi-stage utility decision rather than a four-tier keyword lookup:
 
-Classification uses bounded, inspectable signals: latest user text, text length, completed tool-result count, and current step number. Quota pressure can conserve the regular Codex pool by shifting medium work to Spark, preserve a configured Spark reserve, and degrade hard work only at an emergency threshold.
+1. Extract semantic and structural features for coding, analysis, writing, risk, agentic work, long context, images, constraints, tool history, and step depth.
+2. Query the live DSH model registry and reject unavailable or modality-incompatible candidates.
+3. Score eligible candidates across quality, speed, economy, task affinity, quota headroom, and reserve pressure.
+4. Select deterministically and log the winner, score, demand, quota, alternatives, and rejected candidates.
 
-If quota retrieval fails, difficulty routing continues. The quota request never prevents a model call.
+Quality receives more weight as demand rises; speed and economy receive more weight for low-demand work. If quota retrieval fails, capability and task routing continue. See [the routing design](docs/routing-design.md) for the formula, open-source references, evidence policy, and evaluation limits.
 
 ## Explicit selection always wins
 
@@ -59,36 +57,23 @@ The bundle inserts one host plugin row. Override it in your profile's `cordis.pa
 ```yaml
 - id: smart-model-router
   config:
-    displayName: Auto (difficulty + quota)
+    displayName: Auto (capability + quota)
     quotaStatusUrl: http://127.0.0.1:3080/api/dsh-chatgpt-subscription/status
     quotaCacheMs: 60000
-    tiers:
-      easy:
-        provider: codex-chatgpt
-        model: gpt-5.3-codex-spark
-        reasoningEffort: low
-      medium:
-        provider: codex-chatgpt
-        model: gpt-5.4-mini
-        reasoningEffort: medium
-      hard:
-        provider: codex-chatgpt
-        model: gpt-5.6-sol
-        reasoningEffort: high
-      critical:
-        provider: codex-chatgpt
-        model: gpt-5.6-sol
-        reasoningEffort: max
+    policy:
+      qualityWeight: 1
+      speedWeight: 0.36
+      economyWeight: 0.44
+      quotaWeight: 0.65
+      reservePercent: 8
+      reservePenalty: 1.4
     quota:
       enabled: true
-      regularBucketId: codex
-      burstBucketId: gpt-5-3-codex-spark
-      regularConservePercent: 20
-      regularEmergencyPercent: 8
-      burstReservePercent: 10
+    # candidates is an array of provider/model, modalities, quotaBucketId,
+    # quality/speed/economy estimates, and per-task affinity weights.
 ```
 
-All policy thresholds and routes are Cordis config; deployments do not need to edit source.
+All candidates, estimates, affinities, policy weights, quota reserves, and endpoint settings are Cordis config; deployments do not need to edit source. The complete default candidate objects are in `src/core.js`.
 
 ## Architecture
 
@@ -100,18 +85,19 @@ All policy thresholds and routes are Cordis config; deployments do not need to e
 
 ## Quota integration
 
-Version 0.1 reads the authenticated `dsh-chatgpt-subscription` status endpoint through loopback HTTP. This keeps the plugin standalone but is the main upstream-integration limitation: a provider-neutral read-only quota Service would remove the HTTP and fixed-port coupling. The router deliberately treats the signal as optional.
+Version 0.2 reads the authenticated `dsh-chatgpt-subscription` status endpoint through loopback HTTP. This keeps the plugin standalone but is the main upstream-integration limitation: a provider-neutral read-only quota Service would remove the HTTP and fixed-port coupling. The router deliberately treats the signal as optional.
 
 ## Development
 
 ```bash
 npm install --ignore-scripts
 npm run check
+npm run benchmark
 npm run smoke:real-dsh
 npm run pack:check
 ```
 
-The test suite covers classification, quota thresholds, explicit-selection precedence, missing quota, virtual model registration, routing, and real DSH mount/unload lifecycle.
+The test suite covers feature extraction, utility scoring, capability rejection, quota reserves, explicit-selection precedence, missing quota, virtual model registration, routing, and real DSH mount/unload lifecycle. The transparent regression corpus currently contains 12 representative tasks; it is a policy drift check, not a scientific model-quality benchmark.
 
 ## Security and privacy
 
@@ -119,10 +105,10 @@ The plugin sends no task text to a classifier service. Classification is local. 
 
 ## Known limitations and upstream path
 
-- Keyword-based classification is deterministic and cheap, but less semantic than a dedicated classifier.
+- Local semantic features remain a deterministic approximation; trained routers such as RouteLLM or RoRF can outperform them when representative preference labels exist.
+- Default quality, speed, economy, and affinity values are operator estimates, not vendor benchmark facts. Deployments should calibrate them on their workloads.
 - The current quota source follows the community ChatGPT subscription plugin's HTTP API rather than a DSH quota capability.
 - The virtual adapter is a compatibility technique until DSH has a first-class virtual route registry.
-- Images are routed by the chosen tier; deployments must configure image-capable tier models when image sessions are expected.
 
 The intended upstream path is to propose a provider-neutral quota-status capability and a first-class virtual model route abstraction, then migrate this plugin onto those APIs. The policy engine and tests are intentionally independent of the HTTP transport to support that migration.
 
