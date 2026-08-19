@@ -1,0 +1,57 @@
+{
+  "name": "dsh-smart-model-router",
+  "version": "0.1.0",
+  "description": "Task- and quota-aware virtual Auto model router for DeepSeek Harness",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./core": "./src/core.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "src/",
+    "scripts/",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/core.js && node --check src/index.js && node --check scripts/smoke-real-dsh.mjs && npm test",
+    "smoke:real-dsh": "node scripts/smoke-real-dsh.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "llm",
+    "model-router",
+    "quota"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chuankris/dsh-smart-model-router.git"
+  },
+  "homepage": "https://github.com/chuankris/dsh-smart-model-router#readme",
+  "bugs": {
+    "url": "https://github.com/chuankris/dsh-smart-model-router/issues"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  }
+}
