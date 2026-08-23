@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "description": "DSH Auto 模型路由的页面验收测试集。每条用例均应在新会话或仅取最新用户消息的会话中运行。",
+  "cases": [
+    {
+      "id": "T1",
+      "name": "快速代码小修",
+      "prompt": "【路由测试 T1：快速小修】不要调用任何工具。修复这行 JavaScript：const last = a => a[a.length]。只输出修复后的一行代码，不要解释。",
+      "expectedProvider": "antigravity",
+      "expectedModel": "gemini-3.5-flash",
+      "reason": "短任务优先速度和成本。"
+    },
+    {
+      "id": "T2",
+      "name": "复杂 Agent 编码规划",
+      "prompt": "【路由测试 T2：复杂 Agent 编码】请为一个包含 40 个 package 的 TypeScript monorepo 设计从 CommonJS 到 ESM 的零停机迁移方案。需要处理循环依赖、条件 exports、Jest/Vitest 双测试、发布回滚和分阶段验收。不要调用工具，只输出按风险排序的 8 步计划，每步写验收证据。",
+      "expectedProvider": "antigravity",
+      "expectedModel": "gemini-3.1-pro",
+      "reason": "复杂架构与多阶段推理优先 Pro，输出形式不能降级任务复杂度。"
+    },
+    {
+      "id": "T3",
+      "name": "通用超长上下文",
+      "prompt": "【路由测试 T3：超长上下文】接下来任务需要一次读取约 850,000 tokens 的跨语言代码库，并追踪同一业务规则在 6000 个文件中的实现差异。当前只需输出 5 条分析计划，不调用工具。必须优先选择具备已验证 1M 上下文的模型。",
+      "expectedProvider": "antigravity",
+      "expectedModel": "gemini-3.5-flash",
+      "reason": "通用 1M 上下文任务优先长上下文、速度和可靠性。"
+    },
+    {
+      "id": "T4",
+      "name": "Grounding 与 URL Context",
+      "prompt": "【路由测试 T4：联网研究】需要组合 Google Search grounding、URL context 和结构化输出，对今天三家模型厂商的官方更新做带来源比较。当前不要真正搜索，只输出 JSON 调研计划。必须优先选择原生支持 grounding 与 URL context 的模型。",
+      "expectedProvider": "antigravity",
+      "expectedModel": "gemini-3.5-flash",
+      "reason": "Grounding、URL Context 和结构化输出属于硬能力条件。"
+    },
+    {
+      "id": "T5",
+      "name": "中文超长上下文",
+      "prompt": "【路由测试 T5：中文超长上下文】需要分析约 900,000 tokens 的中文技术文档、中文代码注释和历史决策记录，追踪 5000 个文件中的规则演进。当前不要调用工具，只输出 5 条分析计划。",
+      "expectedProvider": "kimi",
+      "expectedModel": "kimi-k3",
+      "reason": "80 万以上中文技术语料触发 Kimi 长上下文亲和。"
+    },
+    {
+      "id": "T6",
+      "name": "高风险代码执行",
+      "prompt": "【路由测试 T6：高风险编码执行】一个生产级 TypeScript 编译器升级导致构建中断，需要定位根因、修改多个文件、运行测试并设计可回滚补丁。当前不要调用工具，只输出执行计划和验收门槛。",
+      "expectedProvider": "codex-chatgpt",
+      "expectedModel": "gpt-5.6-sol",
+      "reason": "生产级多文件修改、测试和回滚触发 GPT 编码执行亲和与工具能力门槛。"
+    },
+    {
+      "id": "T7",
+      "name": "批量成本优先编码",
+      "prompt": "【路由测试 T7：批量中文编码】需要批量生成 120 个结构相似的中文数据清洗函数和单元测试，任务可并行、成本优先、吞吐优先，不要求深度推理。当前不要调用工具，只输出批处理方案。",
+      "expectedProvider": "volcengine",
+      "expectedModel": "GLM-5.3",
+      "reason": "批量、成本和吞吐优先触发火山 Coding Plan 亲和。"
+    }
+  ]
+}
