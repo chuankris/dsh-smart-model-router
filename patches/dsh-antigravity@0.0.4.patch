@@ -1,0 +1,212 @@
+diff --git a/lib/index.js b/lib/index.js
+index 3a03058be973caaadeef5876332dc0796756920e..a37a98e3c13acb24043c196c982f6a1cc39bdad3 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1497,15 +1497,21 @@ function parseArguments(raw) {
+   return isRecord(parsed) ? parsed : {};
+ }
+ 
+-function imageBlockToPart(block) {
++function imageBlockToPart(block, requestImages) {
+   if (!isRecord(block) || block.type !== "image") return undefined;
+   let data = asString(block.data) || asString(block.base64);
+   const source = isRecord(block.source) ? block.source : undefined;
++  const attachment = isRecord(block.attachment) ? block.attachment : undefined;
++  const attachmentId = attachment ? asString(attachment.attachmentId) : undefined;
++  const prepared = attachmentId ? requestImages?.get(attachmentId) : undefined;
+   if (!data && source) data = asString(source.data) || asString(source.base64);
++  if (!data && prepared) data = Buffer.from(prepared.data).toString("base64");
+   let mimeType =
+     asString(block.mimeType) ||
+     asString(block.mediaType) ||
+     (source ? asString(source.mimeType) || asString(source.mediaType) : undefined) ||
++    (prepared ? asString(prepared.mediaType) : undefined) ||
++    (attachment ? asString(attachment.mediaType) : undefined) ||
+     "image/png";
+   if (data?.startsWith("data:")) {
+     const match = data.match(/^data:([^;,]+);base64,(.*)$/s);
+@@ -1517,7 +1523,7 @@ function imageBlockToPart(block) {
+   return data ? { inlineData: { mimeType, data } } : undefined;
+ }
+ 
+-function contentToUserParts(content) {
++function contentToUserParts(content, requestImages) {
+   if (typeof content === "string") return [{ text: sanitizeText(content) }];
+   if (!Array.isArray(content)) return [];
+   const parts = [];
+@@ -1525,7 +1531,7 @@ function contentToUserParts(content) {
+     if (isRecord(block) && block.type === "text") {
+       parts.push({ text: sanitizeText(block.text) });
+     } else if (isRecord(block) && block.type === "image") {
+-      const imagePart = imageBlockToPart(block);
++      const imagePart = imageBlockToPart(block, requestImages);
+       if (imagePart) parts.push(imagePart);
+     }
+   }
+@@ -1544,6 +1550,50 @@ function toolResultText(blocks) {
+     .join("");
+ }
+ 
++function toolResultImageParts(blocks, requestImages) {
++  if (!Array.isArray(blocks)) return [];
++  const parts = [];
++  for (const block of blocks) {
++    if (!isRecord(block)) continue;
++    if (block.type === "image") {
++      const imagePart = imageBlockToPart(block, requestImages);
++      if (imagePart) parts.push(imagePart);
++    } else if (block.type === "tool-result") {
++      parts.push(...toolResultImageParts(block.content, requestImages));
++    }
++  }
++  return parts;
++}
++
++function collectImageRefs(blocks, refs) {
++  if (!Array.isArray(blocks)) return;
++  for (const block of blocks) {
++    if (!isRecord(block)) continue;
++    if (block.type === "image" && isRecord(block.attachment)) {
++      const attachmentId = asString(block.attachment.attachmentId);
++      if (attachmentId) refs.set(attachmentId, block.attachment);
++    } else if (block.type === "tool-result") {
++      collectImageRefs(block.content, refs);
++    }
++  }
++}
++
++async function prepareRequestImages(messages, attachments, signal) {
++  const refs = new Map();
++  for (const message of messages || []) collectImageRefs(message.content, refs);
++  if (refs.size === 0) return new Map();
++  if (!attachments) throw new LlmError("Antigravity image input requires the durable attachment service", "UNSUPPORTED_CONTENT");
++  const prepared = new Map();
++  await Promise.all([...refs.entries()].map(async ([attachmentId, ref]) => {
++    const image = await attachments.readImageRequest(ref, {
++      maxPixels: 16_777_216,
++      maxBytes: 20_000_000,
++    }, signal);
++    prepared.set(attachmentId, image);
++  }));
++  return prepared;
++}
++
+ function replayBlockFor(message, index) {
+   const source = message.source;
+   if (!source || source.kind !== "model") return undefined;
+@@ -1594,10 +1644,11 @@ function assistantParts(message, model, runtimeModel, toolNames) {
+   return parts;
+ }
+ 
+-function pushToolResult(contents, result, toolNames, model, runtimeModel) {
++function pushToolResult(contents, result, toolNames, model, runtimeModel, requestImages) {
+   const toolCallId = String(result.toolCallId || "");
+   const toolName = toolNames.get(toolCallId) || "unknown";
+   const responseText = toolResultText(result.content) || (result.isError ? "Tool failed" : "");
++  const imageParts = toolResultImageParts(result.content, requestImages);
+   const part = {
+     functionResponse: {
+       name: toolName,
+@@ -1613,9 +1664,15 @@ function pushToolResult(contents, result, toolNames, model, runtimeModel) {
+   } else {
+     contents.push({ role: GEMINI_ROLE.user, parts: [part] });
+   }
++  if (imageParts.length > 0) {
++    contents.push({
++      role: GEMINI_ROLE.user,
++      parts: [{ text: "Image returned by the preceding tool result:" }, ...imageParts],
++    });
++  }
+ }
+ 
+-function convertMessages(options, model, runtimeModel) {
++function convertMessages(options, model, runtimeModel, requestImages) {
+   const contents = [];
+   const toolNames = new Map();
+   for (const message of options.messages) {
+@@ -1626,7 +1683,7 @@ function convertMessages(options, model, runtimeModel) {
+     }
+     const content = Array.isArray(message.content) ? message.content : [];
+     const nonResultContent = content.filter((block) => !isRecord(block) || block.type !== "tool-result");
+-    const userParts = contentToUserParts(nonResultContent);
++    const userParts = contentToUserParts(nonResultContent, requestImages);
+     if (message.role === "system") {
+       if (userParts.length) contents.push({ role: GEMINI_ROLE.user, parts: userParts });
+       continue;
+@@ -1634,7 +1691,7 @@ function convertMessages(options, model, runtimeModel) {
+     if (userParts.length) contents.push({ role: GEMINI_ROLE.user, parts: userParts });
+     for (const block of content) {
+       if (isRecord(block) && block.type === "tool-result") {
+-        pushToolResult(contents, block, toolNames, model, runtimeModel);
++        pushToolResult(contents, block, toolNames, model, runtimeModel, requestImages);
+       }
+     }
+   }
+@@ -1726,9 +1783,9 @@ function mapToolChoiceMode(toolChoice) {
+   return TOOL_CALLING_MODE.auto;
+ }
+ 
+-function buildRequest(options, model, projectId, runtimeModel, effort) {
++function buildRequest(options, model, projectId, runtimeModel, effort, requestImages) {
+   const request = {
+-    contents: convertMessages(options, model, runtimeModel),
++    contents: convertMessages(options, model, runtimeModel, requestImages),
+     systemInstruction: {
+       role: GEMINI_ROLE.user,
+       parts: [
+@@ -2598,7 +2655,7 @@ async function fetchStreamResponse(endpoint, headers, body, signal) {
+   }
+ }
+ 
+-async function* requestAntigravityChunks(options, model, signal, store) {
++async function* requestAntigravityChunks(options, model, signal, store, requestImages) {
+   if (hasImages(options.messages) && !model.inputModalities.includes("image")) {
+     throw new LlmError(`antigravity model "${model.id}" does not support image content`, "UNSUPPORTED_CONTENT");
+   }
+@@ -2626,7 +2683,7 @@ async function* requestAntigravityChunks(options, model, signal, store) {
+     for (let candidateIndex = 0; candidateIndex < runtimeCandidates.length; candidateIndex++) {
+       runtimeModel = runtimeCandidates[candidateIndex];
+       setLastResolvedRuntimeModel(runtimeModel);
+-      const body = JSON.stringify(buildRequest(options, model, projectId, runtimeModel, effort));
++      const body = JSON.stringify(buildRequest(options, model, projectId, runtimeModel, effort, requestImages));
+ 
+       for (const endpoint of endpointCandidates()) {
+         setLastEndpoint(endpoint);
+@@ -2664,11 +2721,13 @@ async function* requestAntigravityChunks(options, model, signal, store) {
+ export class AntigravityAdapter extends LlmAdapter {
+   #store;
+   #modelSettings;
++  #resolveAttachments;
+ 
+-  constructor(store = new FileCredentialStore(), modelSettings = new FileModelSettingsStore()) {
++  constructor(store = new FileCredentialStore(), modelSettings = new FileModelSettingsStore(), resolveAttachments) {
+     super();
+     this.#store = store;
+     this.#modelSettings = modelSettings;
++    this.#resolveAttachments = resolveAttachments;
+   }
+ 
+   providerInfo(provider) {
+@@ -2711,7 +2770,12 @@ export class AntigravityAdapter extends LlmAdapter {
+     const upstream =
+       options.signal === undefined ? consumer.signal : AbortSignal.any([options.signal, consumer.signal]);
+     const watchdog = idleWatchdog(upstream, STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_CODE);
+-    const iterator = requestAntigravityChunks(options, model, watchdog.signal, this.#store)[Symbol.asyncIterator]();
++    const requestImages = await prepareRequestImages(
++      options.messages,
++      this.#resolveAttachments?.(),
++      watchdog.signal,
++    );
++    const iterator = requestAntigravityChunks(options, model, watchdog.signal, this.#store, requestImages)[Symbol.asyncIterator]();
+ 
+     let exhausted = false;
+     try {
+@@ -3024,7 +3088,7 @@ function registerWebApi(ctx, store, modelSettings) {
+ export function apply(ctx) {
+   const store = new FileCredentialStore(credentialPath());
+   const modelSettings = new FileModelSettingsStore(modelSettingsPath());
+-  const adapter = new AntigravityAdapter(store, modelSettings);
++  const adapter = new AntigravityAdapter(store, modelSettings, () => ctx.get("attachments"));
+   ctx.llm.registerAdapter([PROVIDER], adapter);
+   registerWebApi(ctx, store, modelSettings);
+ }
