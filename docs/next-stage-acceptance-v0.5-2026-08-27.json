@@ -28,7 +28,9 @@
       "selected": "antigravity/gemini-3.1-flash-image",
       "error": "QUOTA",
       "providerStatus": 429,
-      "note": "Shared account quota is visible, but the exact image-model quota is hidden and exhausted."
+      "method": "real DSH page with Auto selected",
+      "promptTime": "2026-08-27T12:21:00Z",
+      "note": "The third live-page retry selected the correct exact image model but still returned 429. Shared account quota is visible, while the exact image-model quota is hidden and exhausted."
     },
     "explainabilityComponent": {
       "status": "passed",
@@ -44,7 +46,9 @@
     },
     "liveBrowserVisualAcceptance": {
       "status": "blocked",
-      "reason": "dsh-chrome browser bridge is not connected"
+      "browserBridge": "connected",
+      "categoryDiscovery": "passed",
+      "reason": "On the latest DSH build 141eb6f, the settings sidebar closes but the settings dialog remains only in the hidden DOM, so the routing card cannot be visually captured."
     }
   },
   "releasePolicy": {
@@ -53,4 +57,3 @@
     "nextGate": "Promote only after sufficient real disagreement samples and stable offline metrics."
   }
 }
-
