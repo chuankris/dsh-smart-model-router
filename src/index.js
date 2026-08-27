@@ -101,11 +101,19 @@ export function capacityRequest(messages = [], step = {}) {
   const text = taskText(messages)
   const imageIntentText = text.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
   const imageGeneration = /(?:生成|创建|绘制|画|设计|制作)(?:一张|一个)?[^。\n]{0,48}(?:图片|图像|插画|海报|头像|封面|\b(?:png|jpe?g|webp|svg)\b)|(?:generate|create|draw|render|design).{0,36}(?:image|picture|illustration|poster|avatar|\b(?:png|jpe?g|webp|svg)\b)/i.test(imageIntentText)
-  const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(text)
+  const videoIntentText = text.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
+  const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(videoIntentText)
   const coding = !imageGeneration && !videoGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
-  const grounding = /(?:grounding|google\s*search|url\s*context|联网|搜索|检索|带来源|官方更新|今天|最新)/i.test(text)
+  const routingIntentText = text.replace(/(?:把|将)\s*[“「"'](?:.|\n){0,240}[”」"']\s*(?:这句话|这段话|这些内容|内容)?\s*(?:翻译|改写|润色)[^。\n]*/gi, '')
+  const noGrounding = /(?:不需要|不要|无需|禁止|不)\s*(?:再|进行)?\s*(?:联网|搜索|检索|浏览网页|打开.{0,8}(?:页面|链接))|(?:do\s+not|don't|without)\s+(?:search|browse|use\s+the\s+internet|open.{0,8}(?:pages?|links?))/i.test(routingIntentText)
+  const groundingIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|进行)?\s*(?:联网|搜索|检索|浏览网页|打开.{0,8}(?:页面|链接))|(?:do\s+not|don't|without)\s+(?:search|browse|use\s+the\s+internet|open.{0,8}(?:pages?|links?))/gi, '')
+  const classifierIntentText = (noGrounding ? groundingIntentText.replace(/(?:今天|最新|today|latest|current)/gi, '') : groundingIntentText)
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
+  const grounding = /(?:grounding|google\s*search|url\s*context|联网|搜索|检索|带来源|官方更新)/i.test(groundingIntentText)
+    || (!noGrounding && /(?:今天|最新|today|latest|current)/i.test(groundingIntentText))
   const strictGrounding = grounding
-    && /(?:官方|第一方|直接链接|核对|验证|发布日期|不得.{0,8}推断|official|primary source|direct links?|verify|publication date|must open)/i.test(text)
+    && /(?:官方|第一方|直接链接|核对|验证|发布日期|不得.{0,8}推断|official|primary source|direct links?|verify|publication date|must open)/i.test(groundingIntentText)
   const structuredOutput = /(?:json|schema|结构化输出)/i.test(text)
   const noTools = /(?:不|不要|无需|不需要|禁止).{0,8}(?:调用|使用).{0,6}工具|(?:without|no)\s+tools?/i.test(text)
   const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
@@ -123,7 +131,7 @@ export function capacityRequest(messages = [], step = {}) {
           : 'pdf'
     if (!inputModalities.includes(uploadedModality)) inputModalities.push(uploadedModality)
   }
-  const classifier = classifyTask({ text, inputModalities })
+  const classifier = classifyTask({ text: classifierIntentText, inputModalities })
   const longMatch = text.match(/(?:约|大约|超过|至少)?\s*([\d,.]+)\s*(m|k|万|百万)?\s*(?:tokens?|上下文)/i)
   let minContextTokens
   if (longMatch) {
