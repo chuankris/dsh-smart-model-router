@@ -60,6 +60,18 @@ test('registers the virtual Auto provider and model', async () => {
   assert.deepEqual(await h.registration.adapter.listModels('dsh-auto'), [{ provider: 'dsh-auto', id: 'dynamic', name: 'Auto Test' }])
 })
 
+test('audio artifact generation directly selects a tool-assisted model', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = () => { throw new Error('audio generation must not call the native recommendation endpoint') }
+  try {
+    const h = harness({ recommendation: { enabled: true, url: 'http://unused.invalid' } })
+    const agent = { session: { deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '从 .dsh-uploads\\blue.mp4 提取音轨，输出 WAV 文件。' }] }] } }
+    const route = await h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
+    assert.equal(route.provider, 'p')
+    assert.equal(route.model, 'hard')
+  } finally { globalThis.fetch = originalFetch }
+})
+
 test('recommendation timeout falls back to the local router', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = (_url, options) => new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }))

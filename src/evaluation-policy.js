@@ -18,7 +18,7 @@ export function classifierRolloutGate(classifier, sampleCounts = {}) {
 }
 
 export function executionPolicy(requestType, { allowToolAssisted = true } = {}) {
-  const artifact = requestType === 'image-generation' ? 'image' : requestType === 'video-generation' ? 'video' : undefined
+  const artifact = requestType === 'image-generation' ? 'image' : requestType === 'video-generation' ? 'video' : requestType === 'audio-generation' ? 'audio' : undefined
   return {
     preferredPath: 'native-model',
     allowToolAssisted: Boolean(artifact) && allowToolAssisted,

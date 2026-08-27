@@ -179,14 +179,21 @@ export function capacityRequest(messages = [], step = {}) {
   const imageReferencePresent = hasInputModality(messages, 'image') || /\.dsh-uploads[\\/][^\s\r\n]+\.(?:png|jpe?g|webp|gif|bmp)(?=\s|$|[，。；、,:;!?！？)])/i.test(text)
   const imageTransformation = imageReferencePresent && /(?:改成|改为|修改为|编辑|替换|变成|添加|去除|移除|生成.{0,24}(?:版本|变体|新图|成图)|输出.{0,20}(?:图片|图像|新图|成图)|(?:基于|参考|根据).{0,30}(?:生成|创建|制作))/i.test(imageIntentText)
   const imageGeneration = imageTransformation || /(?:生成|创建|绘制|画|设计|制作|输出|导出)(?:一张|一个)?[^。\n]{0,48}(?:图片|图像|新图|成图|插画|海报|头像|封面|\b(?:png|jpe?g|webp|svg)\b)|(?:generate|create|draw|render|design|export).{0,36}(?:image|picture|illustration|poster|avatar|variation|\b(?:png|jpe?g|webp|svg)\b)/i.test(imageIntentText)
-  const videoIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
-  const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(videoIntentText)
-  const coding = !imageGeneration && !videoGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
+  const videoIntentText = routingIntentText
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:剪辑|裁剪|编辑|修改|变速|压缩)/gi, '')
+  const videoReferencePresent = hasInputModality(messages, 'video') || /\.dsh-uploads[\\/][^\s\r\n]+\.(?:mp4|mov|webm|mkv)(?=\s|$|[，。；、,:;!?！？)])/i.test(text)
+  const videoTransformation = videoReferencePresent && /(?:剪成|剪辑|裁剪|编辑|修改|变速|压缩|拼接|添加字幕|去除|移除|输出.{0,20}(?:视频|影片)|(?:基于|参考|根据).{0,30}(?:生成|创建|制作))/i.test(videoIntentText)
+  const videoGeneration = videoTransformation || /(?:生成|创建|制作|输出|导出).{0,20}(?:视频|影片|动画|\b(?:mp4|mov|webm|mkv)\b)|(?:generate|create|render|export).{0,24}(?:video|movie|animation|\b(?:mp4|mov|webm|mkv)\b)/i.test(videoIntentText)
+  const audioIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作|输出|导出|提取|分离).{0,20}(?:音频|音轨|声音|\b(?:mp3|wav|m4a|aac|ogg)\b)|(?:do\s+not|don't|without)\s+(?:generate|create|export|extract).{0,20}(?:audio|sound|track|\b(?:mp3|wav|m4a|aac|ogg)\b)/gi, '')
+  const audioGeneration = /(?:生成|创建|制作|输出|导出).{0,24}(?:音频|音轨|声音|\b(?:mp3|wav|m4a|aac|ogg)\b)|(?:提取|分离).{0,24}(?:音轨|音频|声音).{0,24}(?:输出|导出|保存|\b(?:mp3|wav|m4a|aac|ogg)\b)|(?:generate|create|export|extract).{0,24}(?:audio|sound|track|\b(?:mp3|wav|m4a|aac|ogg)\b)/i.test(audioIntentText)
+  const coding = !imageGeneration && !videoGeneration && !audioGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
   const noGrounding = /(?:不需要|不要|无需|禁止|不)\s*(?:再|进行)?\s*(?:联网|搜索|检索|浏览网页|打开.{0,8}(?:页面|链接))|(?:do\s+not|don't|without)\s+(?:search|browse|use\s+the\s+internet|open.{0,8}(?:pages?|links?))/i.test(routingIntentText)
   const groundingIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|进行)?\s*(?:联网|搜索|检索|浏览网页|打开.{0,8}(?:页面|链接))|(?:do\s+not|don't|without)\s+(?:search|browse|use\s+the\s+internet|open.{0,8}(?:pages?|links?))/gi, '')
   const classifierIntentText = (noGrounding ? groundingIntentText.replace(/(?:今天|最新|today|latest|current)/gi, '') : groundingIntentText)
     .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
     .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作|输出|导出|提取|分离).{0,20}(?:音频|音轨|声音|\b(?:mp3|wav|m4a|aac|ogg)\b)|(?:do\s+not|don't|without)\s+(?:generate|create|export|extract).{0,20}(?:audio|sound|track|\b(?:mp3|wav|m4a|aac|ogg)\b)/gi, '')
   const grounding = /(?:grounding|google\s*search|url\s*context|联网|搜索|检索|带来源|官方更新)/i.test(groundingIntentText)
     || (!noGrounding && /(?:今天|最新|today|latest|current)/i.test(groundingIntentText))
   const strictGrounding = grounding
@@ -211,7 +218,9 @@ export function capacityRequest(messages = [], step = {}) {
           : 'pdf'
     if (!inputModalities.includes(uploadedModality)) inputModalities.push(uploadedModality)
   }
-  const classifierRoutingText = imageGeneration ? `${classifierIntentText}\ngenerate image output` : classifierIntentText
+  const classifierRoutingText = imageGeneration ? `${classifierIntentText}\ngenerate image output`
+    : videoGeneration ? `${classifierIntentText}\ngenerate video output`
+      : audioGeneration ? `${classifierIntentText}\ngenerate audio output` : classifierIntentText
   const classifier = classifyTask({ text: classifierRoutingText, inputModalities })
   const longMatch = text.match(/(?:约|大约|超过|至少)?\s*([\d,.]+)\s*(m|k|万|百万)?\s*(?:tokens?|上下文)/i)
   let minContextTokens
@@ -246,10 +255,11 @@ export function capacityRequest(messages = [], step = {}) {
     structuredOutput: structuredOutput || undefined,
     imageGeneration: imageGeneration || undefined,
     videoGeneration: videoGeneration || undefined,
+    audioGeneration: audioGeneration || undefined,
   }
   const weights = imageGeneration
     ? { multimodal: 0.6, reliability: 0.18, speed: 0.12, costEfficiency: 0.1 }
-    : videoGeneration
+    : videoGeneration || audioGeneration
       ? { multimodal: 0.55, reliability: 0.2, speed: 0.15, costEfficiency: 0.1 }
       : gptAffinity
     ? { coding: 0.4, agentic: 0.25, reasoning: 0.2, reliability: 0.15 }
@@ -267,7 +277,7 @@ export function capacityRequest(messages = [], step = {}) {
                 ? { speed: 0.45, costEfficiency: 0.35, coding: 0.1, reliability: 0.1 }
                 : { coding: 0.25, reliability: 0.25, speed: 0.2, costEfficiency: 0.2, agentic: 0.1 }
 
-  const requestType = imageGeneration ? 'image-generation' : videoGeneration ? 'video-generation' : inputModalities.length ? 'multimodal-understanding' : 'text'
+  const requestType = imageGeneration ? 'image-generation' : videoGeneration ? 'video-generation' : audioGeneration ? 'audio-generation' : inputModalities.length ? 'multimodal-understanding' : 'text'
   return {
     requestType,
     required: Object.fromEntries(Object.entries(required).filter(([, value]) => value !== undefined)),
@@ -381,7 +391,7 @@ export function apply(ctx, config) {
   async function capacityRoute(messages, step, proposed, sessionKey) {
     if (config.recommendation?.enabled === false) return null
     const request = capacityRequest(messages, step)
-    const generationRequired = Boolean(request.required.imageGeneration || request.required.videoGeneration)
+    const generationRequired = Boolean(request.required.imageGeneration || request.required.videoGeneration || request.required.audioGeneration)
     const contextRequired = Number(request.required.minContextTokens) > 0
     const signature = requestSignature(request)
 
@@ -408,6 +418,12 @@ export function apply(ctx, config) {
         return { route, decision }
       }
       return null
+    }
+
+    if (request.requestType === 'audio-generation') {
+      const assisted = await toolAssistedFallback(new Error('no native audio-generation provider is registered'))
+      if (assisted) return assisted
+      throw new Error('smart-model-router: audio-generation unavailable: no native or tool-assisted provider is registered')
     }
 
     try {
