@@ -1,0 +1,56 @@
+{
+  "date": "2026-08-27",
+  "routerVersion": "0.5.0",
+  "capacityVersion": "0.7.1",
+  "status": "partially_accepted",
+  "checks": {
+    "routerUnitTests": { "passed": 22, "total": 22 },
+    "legacyBenchmark": { "passed": 12, "total": 12 },
+    "scenarioBenchmarkV2": { "passed": 6, "total": 6 },
+    "classifierBenchmark": { "passed": 16, "total": 16 },
+    "capacityTests": { "passed": 14, "total": 14 },
+    "routerBuild": "passed",
+    "capacityBuild": "passed",
+    "persistentFeedbackAcrossRestart": "passed",
+    "autoLineageAcrossRestart": "passed",
+    "realBatchCodingRoute": {
+      "status": "passed",
+      "selected": "volcengine/GLM-5.3",
+      "classifier": {
+        "mode": "shadow",
+        "label": "batch-coding",
+        "confidence": 0.930074,
+        "margin": 0.909268
+      }
+    },
+    "imageGenerationArtifact": {
+      "status": "blocked",
+      "selected": "antigravity/gemini-3.1-flash-image",
+      "error": "QUOTA",
+      "providerStatus": 429,
+      "note": "Shared account quota is visible, but the exact image-model quota is hidden and exhausted."
+    },
+    "explainabilityComponent": {
+      "status": "passed",
+      "method": "React render-tree test",
+      "covers": [
+        "selected provider and model",
+        "selected contribution",
+        "alternatives and rejection reason",
+        "quota reliability",
+        "shadow classifier label and confidence",
+        "positive and negative feedback actions"
+      ]
+    },
+    "liveBrowserVisualAcceptance": {
+      "status": "blocked",
+      "reason": "dsh-chrome browser bridge is not connected"
+    }
+  },
+  "releasePolicy": {
+    "classifierMode": "shadow",
+    "changesProductionRoute": false,
+    "nextGate": "Promote only after sufficient real disagreement samples and stable offline metrics."
+  }
+}
+

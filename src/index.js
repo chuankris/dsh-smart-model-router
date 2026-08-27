@@ -1,5 +1,6 @@
 import z from '@deepseek-ai/schemastery'
 import { AUTO_MODEL, AUTO_PROVIDER, DEFAULT_CANDIDATES, resolveAutoRoute } from './core.js'
+import { classifyTask } from './lightweight-classifier.js'
 
 const affinitySchema = z.object({
   simple: z.number(), coding: z.number(), writing: z.number(), analysis: z.number(), vision: z.number(),
@@ -100,6 +101,7 @@ export function capacityRequest(messages = [], step = {}) {
   const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
   const toolUse = !noTools && (hasToolHistory || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现|运行测试|终端|浏览器/i.test(text))
   const inputModalities = ['image', 'audio', 'video', 'pdf'].filter(modality => hasInputModality(messages, modality))
+  const classifier = classifyTask({ text, inputModalities })
   const longMatch = text.match(/(?:约|大约|超过|至少)?\s*([\d,.]+)\s*(m|k|万|百万)?\s*(?:tokens?|上下文)/i)
   let minContextTokens
   if (longMatch) {
@@ -158,6 +160,7 @@ export function capacityRequest(messages = [], step = {}) {
     requestType: imageGeneration ? 'image-generation' : videoGeneration ? 'video-generation' : inputModalities.length ? 'multimodal-understanding' : 'text',
     required: Object.fromEntries(Object.entries(required).filter(([, value]) => value !== undefined)),
     weights,
+    classifier: { mode: 'shadow', ...classifier },
     ...(providers ? { providers } : {}),
   }
 }

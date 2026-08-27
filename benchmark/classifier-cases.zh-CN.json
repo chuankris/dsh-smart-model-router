@@ -1,0 +1,18 @@
+[
+  {"id":"simple-translate","text":"把 hello 翻译成中文，只输出一行。","label":"simple-text"},
+  {"id":"simple-explain","text":"用一句话简单解释布隆过滤器。","label":"simple-text"},
+  {"id":"production-incident","text":"修复生产事故，修改多个 TypeScript 文件，运行完整测试并给出回滚补丁。","label":"production-coding"},
+  {"id":"production-rollback","text":"设计 production rate limiter migration with multi-file changes and rollback plan.","label":"production-coding"},
+  {"id":"batch-cost","text":"批量处理十万条 TypeScript 分类任务，成本优先、吞吐优先。","label":"batch-coding"},
+  {"id":"batch-throughput","text":"Generate code for a batch pipeline optimized for throughput and cost-first execution.","label":"batch-coding"},
+  {"id":"long-chinese","text":"分析 1M tokens 中文技术文档、中文知识库和历史决策。","label":"long-context"},
+  {"id":"long-codebase","text":"理解 800k token 超长代码库上下文并总结架构。","label":"long-context"},
+  {"id":"grounded-current","text":"联网搜索今天的官方更新，给出来源。","label":"grounded-research"},
+  {"id":"grounded-en","text":"Research current facts with sources using Google Search grounding.","label":"grounded-research"},
+  {"id":"image-png","text":"生成一张 1024×1024 PNG，顶部写 ROUTE IMAGE。","label":"image-generation"},
+  {"id":"image-poster","text":"设计一张产品宣传海报。","label":"image-generation"},
+  {"id":"video","text":"生成一个 10 秒产品介绍视频。","label":"video-generation"},
+  {"id":"image-understanding","text":"查看上传图片并识别主要对象。","inputModalities":["image"],"label":"multimodal-understanding"},
+  {"id":"audio-understanding","text":"分析这段音频的主要内容。","inputModalities":["audio"],"label":"multimodal-understanding"},
+  {"id":"general","text":"比较事件驱动架构与请求响应架构的取舍。","label":"general-text"}
+]
