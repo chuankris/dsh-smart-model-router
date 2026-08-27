@@ -42,6 +42,21 @@ test('Chinese payment consistency and crash recovery require the strong coding p
   assert.equal(request.required.toolUse, undefined)
 })
 
+test('strict first-party source verification prefers Codex while ordinary grounding stays open', () => {
+  const strict = capacityRequest([
+    user('搜索 OpenAI 官方最新三篇文章，必须打开页面核对发布日期并给出官方直接链接，不得根据摘要推断。'),
+  ])
+  const ordinary = capacityRequest([
+    user('联网搜索今天的人工智能新闻并做简短摘要。'),
+  ])
+
+  assert.equal(strict.required.grounding, true)
+  assert.equal(strict.required.toolUse, true)
+  assert.deepEqual(strict.providers, ['codex-chatgpt'])
+  assert.equal(ordinary.required.grounding, true)
+  assert.equal(ordinary.providers, undefined)
+})
+
 test('synthetic DSH context after the user prompt does not contaminate classification', () => {
   const request = capacityRequest([
     user('你好，请只用一句话解释布隆过滤器，不调用工具。'),

@@ -91,6 +91,12 @@ function requestSignature(request) {
   return JSON.stringify({ requestType: request.requestType, required: request.required, providers: request.providers ?? [] })
 }
 
+function agentStepNumber(step) {
+  const raw = typeof step === 'number' ? step : step?.step ?? step?.index ?? step?.number
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : 1
+}
+
 export function capacityRequest(messages = [], step = {}) {
   const text = taskText(messages)
   const imageIntentText = text.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
@@ -98,6 +104,8 @@ export function capacityRequest(messages = [], step = {}) {
   const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(text)
   const coding = !imageGeneration && !videoGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
   const grounding = /(?:grounding|google\s*search|url\s*context|联网|搜索|检索|带来源|官方更新|今天|最新)/i.test(text)
+  const strictGrounding = grounding
+    && /(?:官方|第一方|直接链接|核对|验证|发布日期|不得.{0,8}推断|official|primary source|direct links?|verify|publication date|must open)/i.test(text)
   const structuredOutput = /(?:json|schema|结构化输出)/i.test(text)
   const noTools = /(?:不|不要|无需|不需要|禁止).{0,8}(?:调用|使用).{0,6}工具|(?:without|no)\s+tools?/i.test(text)
   const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
@@ -139,10 +147,10 @@ export function capacityRequest(messages = [], step = {}) {
     ? ['antigravity']
     : kimiAffinity
     ? ['kimi']
-    : gptAffinity ? ['codex-chatgpt'] : volcAffinity ? ['volcengine'] : undefined
+    : (gptAffinity || strictGrounding) ? ['codex-chatgpt'] : volcAffinity ? ['volcengine'] : undefined
   const required = {
     coding: coding || undefined,
-    toolUse: (!noTools && (toolUse || gptAffinity)) || undefined,
+    toolUse: (!noTools && (toolUse || gptAffinity || strictGrounding)) || undefined,
     modalities: inputModalities.length ? inputModalities : undefined,
     minContextTokens,
     grounding: grounding || undefined,
@@ -303,7 +311,7 @@ export function apply(ctx, config) {
         else delete route.reasoningEffort
         const selected = { provider: route.provider, model: route.model, score: null, confidence: 1, strengths: ['tool-assisted-generation'], capacity: { state: 'unknown' } }
         const decision = { id: decisionId(), sessionId: sessionKey?.id ? String(sessionKey.id) : undefined, source: 'tool-assisted-fallback', request: { ...request, executionPolicy: { ...request.executionPolicy, actualPath: 'agent-tool' } }, route, selected, recommended: null, alternatives: [], sticky: false, rejected: [], fallbackReason: String(reason?.message ?? reason) }
-        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, signature, decisionId: decision.id })
+        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort, signature, decisionId: decision.id })
         try { ctx.emit?.('smart-model-router/decision', decision) } catch {}
         ctx.logger.warn('smart-model-router: %s native route unavailable; using tool-assisted %s/%s: %s', request.requestType, route.provider, route.model, decision.fallbackReason)
         console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'tool-assisted-fallback', requestType: request.requestType, selected: `${route.provider}/${route.model}`, reason: decision.fallbackReason }))
@@ -354,7 +362,7 @@ export function apply(ctx, config) {
         if (reasoningEffort) route.reasoningEffort = reasoningEffort
         else delete route.reasoningEffort
         const decision = { id: decisionId(), sessionId: sessionKey?.id ? String(sessionKey.id) : undefined, source: 'provider-capacity', request, route, selected: candidate, recommended: result?.selected, alternatives: availableCandidates.filter(item => item.provider !== candidate.provider || item.model !== candidate.model), sticky: selected.sticky, advantage: selected.advantage, rejected: result?.rejected ?? [] }
-        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, signature, decisionId: decision.id })
+        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort, signature, decisionId: decision.id })
         try { ctx.emit?.('smart-model-router/decision', decision) } catch {}
         return { route, decision }
       }
@@ -403,6 +411,13 @@ export function apply(ctx, config) {
       if (sessionKey && typeof sessionKey === 'object') sessionRoutes.delete(sessionKey)
       return proposed
     }
+    if (previousRoute && agentStepNumber(step) > 1) {
+      const route = { ...proposed, provider: previousRoute.provider, model: previousRoute.model }
+      if (previousRoute.reasoningEffort) route.reasoningEffort = previousRoute.reasoningEffort
+      else delete route.reasoningEffort
+      console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'turn-continuation', step: agentStepNumber(step), selected: `${route.provider}/${route.model}` }))
+      return route
+    }
     const messages = agent?.session?.deriveMessages?.() ?? agent?.messages ?? step?.messages ?? []
     const recommended = await capacityRoute(messages, step, proposed, sessionKey)
     if (recommended) return recommended.route
@@ -421,7 +436,7 @@ export function apply(ctx, config) {
       decision.components.remaining ?? 'unknown', decision.rejected.map((item) => `${item.id}:${item.reason}`).join('|') || 'none',
     )
     const legacyDecision = { id: decisionId(), sessionId: sessionKey?.id ? String(sessionKey.id) : undefined, source: 'legacy', request: capacityRequest(messages, step), route: resolved.config, selected: { provider: resolved.config.provider, model: resolved.config.model, score: decision.score, capacity: { state: decision.components?.remaining === undefined ? 'unknown' : 'available', remainingRatio: typeof decision.components?.remaining === 'number' ? decision.components.remaining / 100 : undefined } }, alternatives: [], sticky: false, rejected: decision.rejected ?? [], legacy: decision }
-    if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: resolved.config.provider, model: resolved.config.model, signature: requestSignature(legacyDecision.request), decisionId: legacyDecision.id })
+    if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: resolved.config.provider, model: resolved.config.model, reasoningEffort: resolved.config.reasoningEffort, signature: requestSignature(legacyDecision.request), decisionId: legacyDecision.id })
     try { ctx.emit?.('smart-model-router/decision', legacyDecision) } catch {}
     console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'legacy-route', selected: `${resolved.config.provider}/${resolved.config.model}`, winner: decision.winner }))
     return resolved.config

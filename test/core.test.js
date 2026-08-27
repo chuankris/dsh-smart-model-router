@@ -31,6 +31,13 @@ test('selects stronger model for architecture and production-risk work', () => {
   assert.equal(route('分析生产事故根因，设计安全迁移方案').decision.winner, 'sol')
 })
 
+test('selects Sol for strict first-party verification in legacy fallback', () => {
+  const prompt = '搜索 OpenAI 官方最新文章，必须打开页面核对发布日期并给出官方直接链接，不得根据摘要推断。'
+  const decision = route(prompt, null).decision
+  assert(decision.features.highRisk > 0.8)
+  assert.equal(decision.winner, 'sol')
+})
+
 test('uses quota utility rather than fixed threshold mapping', () => {
   const abundant = route('翻译 hello', quota(20, 99)).decision
   const exhaustedBurst = route('翻译 hello', quota(20, 0)).decision

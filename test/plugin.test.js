@@ -130,9 +130,32 @@ test('session stickiness suppresses a near-tie provider switch', async () => {
     const session = { deriveMessages: () => messages }
     const first = await h.listener({ agent: { session }, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
     messages = [...messages, { role: 'user', content: [{ type: 'text', text: '继续' }] }]
-    const second = await h.listener({ agent: { session }, step: 2 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
+    const second = await h.listener({ agent: { session }, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
     assert.equal(first.model, 'hard')
     assert.equal(second.model, 'hard')
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('tool continuation steps preserve the first route even when recommendation flips strongly', async () => {
+  const originalFetch = globalThis.fetch
+  let call = 0
+  globalThis.fetch = async () => {
+    call += 1
+    const value = call === 1
+      ? { selected: { provider: 'p', model: 'hard', score: 0.95 }, alternatives: [{ provider: 'p', model: 'easy', score: 0.2 }] }
+      : { selected: { provider: 'p', model: 'easy', score: 0.99 }, alternatives: [{ provider: 'p', model: 'hard', score: 0.1 }] }
+    return { ok: true, json: async () => ({ ok: true, value }) }
+  }
+  try {
+    const h = harness({ recommendation: { enabled: true, url: 'http://recommend.local', timeoutMs: 100 } })
+    let messages = [{ role: 'user', content: [{ type: 'text', text: '联网搜索今天的官方更新并核对来源' }] }]
+    const session = { deriveMessages: () => messages }
+    const first = await h.listener({ agent: { session }, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
+    messages = [...messages, { role: 'tool', content: [{ type: 'tool-result', text: 'search failed' }] }]
+    const continuation = await h.listener({ agent: { session }, step: 2 }, () => Promise.resolve({ provider: first.provider, model: first.model }))
+    assert.equal(first.model, 'hard')
+    assert.equal(continuation.model, 'hard')
+    assert.equal(call, 1)
   } finally { globalThis.fetch = originalFetch }
 })
 

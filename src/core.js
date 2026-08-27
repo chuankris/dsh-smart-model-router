@@ -11,7 +11,7 @@ const SIGNALS = Object.freeze({
   coding: /(?:代码|编程|实现|修复|重构|测试|仓库|接口|数据库|部署|compile|code|coding|implement|debug|refactor|test|repository|api|database|deploy|typescript|javascript|python|rust|java|sql)/i,
   analysis: /(?:分析|调查|研究|比较|证明|推导|根因|审计|架构|设计|评估|调试|竞态|analy[sz]e|investigate|research|compare|proof|derive|root cause|audit|architecture|design|evaluate|debug|race condition)/i,
   writing: /(?:写作|润色|翻译|改写|总结|文案|邮件|translate|rewrite|summari[sz]e|polish|draft|email)/i,
-  highRisk: /(?:生产|线上|安全|漏洞|权限|认证|支付|财务|删除|迁移|数据丢失|一查到底|production|security|vulnerability|permission|authentication|payment|finance|delete|migration|data loss|critical)/i,
+  highRisk: /(?:生产|线上|安全|漏洞|权限|认证|支付|财务|删除|迁移|数据丢失|一查到底|官方.{0,24}(?:核对|验证|发布日期|直接链接)|不得.{0,8}(?:推断|猜测)|必须.{0,16}打开.{0,12}(?:页面|链接)|production|security|vulnerability|permission|authentication|payment|finance|delete|migration|data loss|critical|primary source|publication date|must open|do not infer)/i,
   planning: /(?:计划|方案|步骤|路线图|拆解|plan|proposal|roadmap|steps|break down)/i,
   simple: /(?:是什么|解释|列出|格式化|翻译|改写|总结|what is|explain|list|format|translate|rewrite|summari[sz]e)/i,
 })
