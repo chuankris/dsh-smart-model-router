@@ -1,0 +1,48 @@
+{
+  "date": "2026-08-27",
+  "routerVersion": "0.6.0",
+  "capacityVersion": "0.8.0",
+  "dshBuild": "141eb6f",
+  "status": "partially_accepted",
+  "checks": {
+    "routerUnitTests": { "passed": 24, "total": 24 },
+    "legacyBenchmark": { "passed": 12, "total": 12 },
+    "scenarioBenchmarkV2": { "passed": 6, "total": 6 },
+    "classifierBenchmark": { "passed": 16, "total": 16 },
+    "capacityTests": { "passed": 16, "total": 16 },
+    "routerBuild": "passed",
+    "capacityBuild": "passed",
+    "evaluationSchemaVersion": 2,
+    "structuredFeedback": "passed",
+    "manualSettingsAcceptance": "passed",
+    "runtimePolicy": {
+      "minimumShadowSamples": 100,
+      "minimumAdjudicatedSamples": 20,
+      "minimumClassifierConfidence": 0.85,
+      "minimumClassifierMargin": 0.25,
+      "initialTrafficRatio": 0.1,
+      "maximumProbePerModelPerDay": 2,
+      "exactQuotaCooldownMinutes": 30,
+      "negativeFeedbackRollbackPoints": 3
+    },
+    "capacityRuntime": {
+      "status": "passed",
+      "capacities": 17,
+      "sources": 5,
+      "sourceIds": [
+        "chatgpt-subscription",
+        "antigravity-quota",
+        "kimi-code-usage",
+        "volcengine-coding-plan",
+        "dsh-llm-catalog"
+      ]
+    },
+    "nativeImageGenerationArtifact": {
+      "status": "blocked",
+      "selected": "antigravity/gemini-3.1-flash-image",
+      "providerStatus": 429,
+      "note": "Tool-assisted image generation succeeded through Claude, but it does not replace native-model route acceptance."
+    }
+  }
+}
+
