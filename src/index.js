@@ -400,6 +400,10 @@ export function apply(ctx, config) {
     const [quota, runtimeCapabilities] = await Promise.all([quotaStatus(), capabilities()])
     const resolved = resolveAutoRoute({ proposed, messages, step, config, quota, runtimeCapabilities })
     const decision = resolved.decision
+    if (!decision) {
+      console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'lineage-pass-through', selected: `${resolved.config.provider}/${resolved.config.model}` }))
+      return resolved.config
+    }
     ctx.logger.info(
       'smart-model-router: %s/%s -> %s/%s (winner=%s score=%s demand=%s quota=%s%% rejected=%s)',
       proposed.provider, proposed.model, resolved.config.provider, resolved.config.model,
