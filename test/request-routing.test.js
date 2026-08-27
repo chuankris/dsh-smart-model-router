@@ -16,6 +16,15 @@ test('classifies image generation separately from image understanding', () => {
   assert.equal(understanding.required.imageGeneration, undefined)
 })
 
+test('explicit no-tools instruction disables tool-assisted image fallback', () => {
+  const nativeOnly = capacityRequest([user('生成一张蓝色方块 PNG 图片，不使用工具。')])
+  assert.equal(nativeOnly.requestType, 'image-generation')
+  assert.equal(nativeOnly.executionPolicy.allowToolAssisted, false)
+
+  const assisted = capacityRequest([user('帮我生成一张猫猫图片')])
+  assert.equal(assisted.executionPolicy.allowToolAssisted, true)
+})
+
 test('short follow-up inherits the preceding task profile', () => {
   const request = capacityRequest([user('修复生产事故，修改多个文件并运行测试，提供可回滚补丁'), user('继续')])
   assert.equal(request.required.coding, true)

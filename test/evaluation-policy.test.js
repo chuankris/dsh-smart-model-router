@@ -21,5 +21,5 @@ test('image execution policy distinguishes native routing from tool assistance',
   })
   assert.equal(EVALUATION_POLICY.hiddenQuotaProbe.maximumPerModelPerDay, 2)
   assert.equal(EVALUATION_POLICY.hiddenQuotaProbe.exactQuotaCooldownMs, 1_800_000)
+  assert.equal(executionPolicy('image-generation', { allowToolAssisted: false }).allowToolAssisted, false)
 })
-

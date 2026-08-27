@@ -163,7 +163,7 @@ export function capacityRequest(messages = [], step = {}) {
     required: Object.fromEntries(Object.entries(required).filter(([, value]) => value !== undefined)),
     weights,
     classifier: { mode: 'shadow', ...classifier, gate: classifierRolloutGate(classifier) },
-    executionPolicy: executionPolicy(requestType),
+    executionPolicy: executionPolicy(requestType, { allowToolAssisted: !noTools }),
     ...(providers ? { providers } : {}),
   }
 }
@@ -198,6 +198,19 @@ function recommendedReasoning(model) {
   if (/mini/i.test(model)) return 'medium'
   if (/gpt-5\.(?:5|6)|sol/i.test(model)) return 'high'
   return undefined
+}
+
+async function resolveModelInfoWithRetry(llm, provider, model, attempts = 2) {
+  let lastError
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const info = await llm.resolveModelInfo(provider, model)
+      if (info) return info
+    } catch (error) { lastError = error }
+    if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  if (lastError) throw lastError
+  return null
 }
 
 export function apply(ctx, config) {
@@ -254,6 +267,34 @@ export function apply(ctx, config) {
   async function capacityRoute(messages, step, proposed, sessionKey) {
     if (config.recommendation?.enabled === false) return null
     const request = capacityRequest(messages, step)
+    const generationRequired = Boolean(request.required.imageGeneration || request.required.videoGeneration)
+    const signature = requestSignature(request)
+
+    async function toolAssistedFallback(reason) {
+      if (!generationRequired || !request.executionPolicy?.allowToolAssisted) return null
+      const candidates = [...config.candidates].sort((left, right) => Number(right.quality ?? 0) - Number(left.quality ?? 0))
+      for (const candidate of candidates) {
+        let available
+        try { available = await resolveModelInfoWithRetry(ctx.llm, candidate.provider, candidate.model) } catch {}
+        if (!available) continue
+        const route = { ...proposed, provider: candidate.provider, model: candidate.model }
+        const preferredEffort = candidate.reasoningEffort ?? recommendedReasoning(candidate.model) ?? proposed.reasoningEffort
+        const supportedEfforts = Array.isArray(available.reasoningEfforts) ? available.reasoningEfforts : []
+        if (supportedEfforts.includes(preferredEffort)) route.reasoningEffort = preferredEffort
+        else if (supportedEfforts.includes('high')) route.reasoningEffort = 'high'
+        else if (supportedEfforts[0]) route.reasoningEffort = supportedEfforts[0]
+        else delete route.reasoningEffort
+        const selected = { provider: route.provider, model: route.model, score: null, confidence: 1, strengths: ['tool-assisted-generation'], capacity: { state: 'unknown' } }
+        const decision = { id: decisionId(), sessionId: sessionKey?.id ? String(sessionKey.id) : undefined, source: 'tool-assisted-fallback', request: { ...request, executionPolicy: { ...request.executionPolicy, actualPath: 'agent-tool' } }, route, selected, recommended: null, alternatives: [], sticky: false, rejected: [], fallbackReason: String(reason?.message ?? reason) }
+        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, signature, decisionId: decision.id })
+        try { ctx.emit?.('smart-model-router/decision', decision) } catch {}
+        ctx.logger.warn('smart-model-router: %s native route unavailable; using tool-assisted %s/%s: %s', request.requestType, route.provider, route.model, decision.fallbackReason)
+        console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'tool-assisted-fallback', requestType: request.requestType, selected: `${route.provider}/${route.model}`, reason: decision.fallbackReason }))
+        return { route, decision }
+      }
+      return null
+    }
+
     try {
       const response = await fetch(config.recommendation?.url ?? 'http://127.0.0.1:3080/api/provider-capacity/recommend', {
         method: 'POST',
@@ -266,20 +307,21 @@ export function apply(ctx, config) {
       const result = payload?.value ?? payload
       const candidates = [result?.selected, ...(result?.alternatives ?? [])].filter(Boolean)
       const availableCandidates = []
+      const availableInfo = new Map()
       for (const candidate of candidates) {
         let available = null
-        try { available = await ctx.llm.resolveModelInfo(candidate.provider, candidate.model) } catch {}
+        try { available = await resolveModelInfoWithRetry(ctx.llm, candidate.provider, candidate.model) } catch {}
         if (!runtimeSatisfiesRequest(available, request)) continue
         availableCandidates.push(candidate)
+        availableInfo.set(`${candidate.provider}\u0000${candidate.model}`, available)
       }
-      const signature = requestSignature(request)
       const previous = sessionKey && typeof sessionKey === 'object' ? sessionRoutes.get(sessionKey) : undefined
       const selected = config.routing?.sticky === false
         ? { candidate: availableCandidates[0], sticky: false }
         : chooseStickyCandidate(availableCandidates, previous, signature, config.routing?.switchMargin ?? 0.05)
       const candidate = selected.candidate
       if (candidate) {
-        const available = await ctx.llm.resolveModelInfo(candidate.provider, candidate.model)
+        const available = availableInfo.get(`${candidate.provider}\u0000${candidate.model}`)
         const preferredEffort = recommendedReasoning(candidate.model) ?? proposed.reasoningEffort
         const supportedEfforts = Array.isArray(available.reasoningEfforts) ? available.reasoningEfforts : []
         const reasoningEffort = supportedEfforts.includes(preferredEffort)
@@ -299,11 +341,26 @@ export function apply(ctx, config) {
         try { ctx.emit?.('smart-model-router/decision', decision) } catch {}
         return { route, decision }
       }
-      if (request.required.imageGeneration || request.required.videoGeneration) throw new Error(`no registered model satisfies ${request.requestType}`)
+      if (generationRequired) {
+        const reason = new Error(`no registered model satisfies ${request.requestType}`)
+        const assisted = await toolAssistedFallback(reason)
+        if (assisted) return assisted
+        if (!request.executionPolicy?.allowToolAssisted) throw new Error(`${reason.message}; tools were explicitly forbidden`)
+        throw reason
+      }
       ctx.logger.warn('capacity recommendation returned no model registered in DSH; using legacy router')
       console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-empty', recommended: result?.selected ? `${result.selected.provider}/${result.selected.model}` : null, candidates: candidates.map((item) => `${item.provider}/${item.model}`), requestType: request.requestType }))
     } catch (error) {
-      if (request.required.imageGeneration || request.required.videoGeneration) throw new Error(`smart-model-router: ${request.requestType} unavailable: ${error?.message ?? error}`)
+      if (generationRequired) {
+        if (!/tools were explicitly forbidden/i.test(String(error?.message ?? error))) {
+          const assisted = await toolAssistedFallback(error)
+          if (assisted) return assisted
+        }
+        const detail = request.executionPolicy?.allowToolAssisted
+          ? `${error?.message ?? error}; no tool-assisted model is registered`
+          : `${error?.message ?? error}; tools were explicitly forbidden`
+        throw new Error(`smart-model-router: ${request.requestType} unavailable: ${detail}`)
+      }
       ctx.logger.warn('capacity recommendation failed; using legacy router: %s', error?.message ?? error)
       console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-fallback', requestType: request.requestType, error: error?.message ?? String(error) }))
     }

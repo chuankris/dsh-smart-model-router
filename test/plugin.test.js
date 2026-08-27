@@ -14,7 +14,7 @@ const config = {
   quota: { enabled: false },
 }
 
-function harness(overrides = {}) {
+function harness(overrides = {}, runtime = {}) {
   let registration
   let listener
   let errorListener
@@ -22,7 +22,7 @@ function harness(overrides = {}) {
     logger: { info() {}, warn() {} },
     llm: {
       registerAdapter(providers, adapter) { registration = { providers, adapter }; return () => {} },
-      resolveModelInfo(_provider, model) { return Promise.resolve({ inputModalities: model === 'easy' ? ['text'] : ['text', 'image'], reasoningEfforts: ['low', 'high'] }) },
+      resolveModelInfo: runtime.resolveModelInfo ?? ((_provider, model) => Promise.resolve({ inputModalities: model === 'easy' ? ['text'] : ['text', 'image'], reasoningEfforts: ['low', 'high'] })),
     },
     on(name, callback) {
       if (name === 'agent/request') listener = callback
@@ -50,6 +50,48 @@ test('recommendation timeout falls back to the local router', async () => {
     const route = await h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
     assert.equal(route.provider, 'p')
     assert.equal(route.model, 'easy')
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('image recommendation retries a transient runtime model resolution miss', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: true, value: { selected: { provider: 'antigravity', model: 'gemini-3.1-flash-image', score: 0.92 }, alternatives: [] } }) })
+  let resolutions = 0
+  try {
+    const h = harness(
+      { recommendation: { enabled: true, url: 'http://recommend.local', timeoutMs: 100 } },
+      { resolveModelInfo: async () => (++resolutions === 1 ? null : { inputModalities: ['text'], reasoningEfforts: [] }) },
+    )
+    const agent = { session: { deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '生成一张蓝色方块 PNG 图片，不使用工具。' }] }] } }
+    const route = await h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
+    assert.equal(route.provider, 'antigravity')
+    assert.equal(route.model, 'gemini-3.1-flash-image')
+    assert.ok(resolutions >= 2)
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('image recommendation timeout uses a tool-assisted model when tools are allowed', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (_url, options) => new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }))
+  try {
+    const h = harness({ recommendation: { enabled: true, url: 'http://timeout.invalid', timeoutMs: 20 } })
+    const agent = { session: { deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '帮我生成一张猫猫图片' }] }] } }
+    const route = await h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' }))
+    assert.equal(route.provider, 'p')
+    assert.equal(route.model, 'hard')
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('image recommendation timeout fails clearly when tools are forbidden', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (_url, options) => new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }))
+  try {
+    const h = harness({ recommendation: { enabled: true, url: 'http://timeout.invalid', timeoutMs: 20 } })
+    const agent = { session: { deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '生成一张蓝色方块 PNG 图片，不使用工具。' }] }] } }
+    await assert.rejects(
+      () => h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' })),
+      /tools were explicitly forbidden/,
+    )
   } finally { globalThis.fetch = originalFetch }
 })
 

@@ -17,13 +17,12 @@ export function classifierRolloutGate(classifier, sampleCounts = {}) {
   return { eligible: reasons.length === 0, reasons, policyVersion: EVALUATION_POLICY_VERSION }
 }
 
-export function executionPolicy(requestType) {
+export function executionPolicy(requestType, { allowToolAssisted = true } = {}) {
   const artifact = requestType === 'image-generation' ? 'image' : requestType === 'video-generation' ? 'video' : undefined
   return {
     preferredPath: 'native-model',
-    allowToolAssisted: Boolean(artifact),
+    allowToolAssisted: Boolean(artifact) && allowToolAssisted,
     requiredArtifact: artifact,
     imageAcceptance: artifact === 'image' ? EVALUATION_POLICY.imageAcceptance : undefined,
   }
 }
-

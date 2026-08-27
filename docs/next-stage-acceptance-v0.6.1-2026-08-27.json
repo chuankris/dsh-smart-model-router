@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "version": "0.6.1",
+  "date": "2026-08-27",
+  "environment": {
+    "dshBuild": "141eb6f",
+    "url": "http://127.0.0.1:3080/"
+  },
+  "automated": {
+    "routerTests": { "passed": 28, "total": 28 },
+    "legacyBenchmark": { "passed": 12, "total": 12 },
+    "scenarioBenchmark": { "passed": 6, "total": 6 },
+    "classifierBenchmark": { "passed": 16, "total": 16 },
+    "capacityTests": { "passed": 16, "total": 16 },
+    "capacityBuild": "passed"
+  },
+  "live": [
+    {
+      "id": "T6F-native-no-tools",
+      "prompt": "【T6F 图片快速失败】请生成一张蓝色方块 PNG 图片，不使用工具。",
+      "route": "antigravity/gemini-3.1-flash-image",
+      "routerResult": "passed",
+      "providerResult": "QUOTA",
+      "assertions": [
+        "no no-registered-model error",
+        "no router timeout",
+        "no tool-assisted fallback"
+      ]
+    },
+    {
+      "id": "T6-tool-assisted",
+      "prompt": "帮我生成一张猫猫图片",
+      "route": "tool-assisted-fallback",
+      "routerResult": "passed",
+      "artifactResult": "passed",
+      "artifact": "D:\\dsh\\.dsh-rc8\\plugins\\subscriptions\\images\\image-2026-08-27T14-18-45-531Z-3vk7op-0.png",
+      "elapsedSeconds": 41
+    }
+  ],
+  "remainingRisk": [
+    "Antigravity exact image-model quota is still exhausted",
+    "tool-assisted candidate ranking is not yet image-tool-specific",
+    "native image artifact acceptance remains blocked until exact quota recovers"
+  ]
+}
