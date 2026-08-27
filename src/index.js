@@ -101,12 +101,16 @@ function agentStepNumber(step) {
 
 export function capacityRequest(messages = [], step = {}) {
   const text = taskText(messages)
-  const imageIntentText = text.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
-  const imageGeneration = /(?:生成|创建|绘制|画|设计|制作)(?:一张|一个)?[^。\n]{0,48}(?:图片|图像|插画|海报|头像|封面|\b(?:png|jpe?g|webp|svg)\b)|(?:generate|create|draw|render|design).{0,36}(?:image|picture|illustration|poster|avatar|\b(?:png|jpe?g|webp|svg)\b)/i.test(imageIntentText)
-  const videoIntentText = text.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
+  const routingIntentText = text.replace(/(?:把|将)\s*[“「"'](?:.|\n){0,240}[”」"']\s*(?:这句话|这段话|这些内容|内容)?\s*(?:翻译|改写|润色)[^。\n]*/gi, '')
+  const imageIntentText = routingIntentText
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|新图|成图|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
+    .replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:修改|编辑|改动|替换)/gi, '')
+  const imageReferencePresent = hasInputModality(messages, 'image') || /\.dsh-uploads[\\/][^\s\r\n]+\.(?:png|jpe?g|webp|gif|bmp)(?=\s|$|[，。；、,:;!?！？)])/i.test(text)
+  const imageTransformation = imageReferencePresent && /(?:改成|改为|修改为|编辑|替换|变成|添加|去除|移除|生成.{0,24}(?:版本|变体|新图|成图)|输出.{0,20}(?:图片|图像|新图|成图)|(?:基于|参考|根据).{0,30}(?:生成|创建|制作))/i.test(imageIntentText)
+  const imageGeneration = imageTransformation || /(?:生成|创建|绘制|画|设计|制作|输出|导出)(?:一张|一个)?[^。\n]{0,48}(?:图片|图像|新图|成图|插画|海报|头像|封面|\b(?:png|jpe?g|webp|svg)\b)|(?:generate|create|draw|render|design|export).{0,36}(?:image|picture|illustration|poster|avatar|variation|\b(?:png|jpe?g|webp|svg)\b)/i.test(imageIntentText)
+  const videoIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|render).{0,18}(?:video|movie|animation)/gi, '')
   const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(videoIntentText)
   const coding = !imageGeneration && !videoGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
-  const routingIntentText = text.replace(/(?:把|将)\s*[“「"'](?:.|\n){0,240}[”」"']\s*(?:这句话|这段话|这些内容|内容)?\s*(?:翻译|改写|润色)[^。\n]*/gi, '')
   const noGrounding = /(?:不需要|不要|无需|禁止|不)\s*(?:再|进行)?\s*(?:联网|搜索|检索|浏览网页|打开.{0,8}(?:页面|链接))|(?:do\s+not|don't|without)\s+(?:search|browse|use\s+the\s+internet|open.{0,8}(?:pages?|links?))/i.test(routingIntentText)
   const groundingIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|进行)?\s*(?:联网|搜索|检索|浏览网页|打开.{0,8}(?:页面|链接))|(?:do\s+not|don't|without)\s+(?:search|browse|use\s+the\s+internet|open.{0,8}(?:pages?|links?))/gi, '')
   const classifierIntentText = (noGrounding ? groundingIntentText.replace(/(?:今天|最新|today|latest|current)/gi, '') : groundingIntentText)
@@ -121,7 +125,8 @@ export function capacityRequest(messages = [], step = {}) {
   const noToolAssistedFallback = noTools
     || /(?:如果|若|一旦).{0,24}(?:图片|图像|image).{0,16}(?:模型|额度|配额|quota).{0,16}(?:不可用|不足|耗尽|用完|unavailable|exhausted|reached).{0,16}(?:直接|只需|请|就).{0,8}(?:说明|告知|报错|失败|停止|stop|fail|tell)/i.test(text)
   const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
-  const toolUse = !noTools && (hasToolHistory || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现|运行测试|终端|浏览器/i.test(text))
+  const toolIntentText = routingIntentText.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:调用|使用|执行|修改|编辑|改动|实现|运行|打开|浏览)/gi, '')
+  const toolUse = !noTools && (hasToolHistory || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现|运行测试|终端|浏览器/i.test(toolIntentText))
   const inputModalities = ['image', 'audio', 'video', 'pdf'].filter(modality => hasInputModality(messages, modality))
   const uploadedFile = text.match(/(?:^|\s)(?:(?:[a-z]:)?[^\s\r\n]*[\\/])?\.dsh-uploads[\\/][^\s\r\n]+\.(png|jpe?g|webp|gif|bmp|mp3|wav|m4a|aac|ogg|mp4|mov|webm|mkv|pdf)(?=\s|$|[，。；、,:;!?！？)])/i)
   if (uploadedFile) {
