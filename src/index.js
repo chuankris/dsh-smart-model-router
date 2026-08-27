@@ -1,7 +1,11 @@
 import z from '@deepseek-ai/schemastery'
+import { existsSync } from 'node:fs'
+import { isAbsolute, resolve } from 'node:path'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { AUTO_MODEL, AUTO_PROVIDER, DEFAULT_CANDIDATES, resolveAutoRoute } from './core.js'
 import { classifyTask } from './lightweight-classifier.js'
 import { EVALUATION_POLICY, classifierRolloutGate, executionPolicy } from './evaluation-policy.js'
+import { validatePngArtifact } from '../scripts/validate-image-artifact.mjs'
 
 const affinitySchema = z.object({
   simple: z.number(), coding: z.number(), writing: z.number(), analysis: z.number(), vision: z.number(),
@@ -61,6 +65,73 @@ function messageText(value) {
   if (Array.isArray(value)) return value.map(messageText).join(' ')
   if (!value || typeof value !== 'object') return ''
   return messageText(value.text ?? value.content ?? value.message ?? '')
+}
+
+function namedColor(text) {
+  if (/(?:红色|纯红|\bred\b)/i.test(text)) return '#FF0000'
+  if (/(?:蓝色|纯蓝|\bblue\b)/i.test(text)) return '#0070FF'
+  if (/(?:绿色|纯绿|\bgreen\b)/i.test(text)) return '#00B050'
+  if (/(?:黑色|纯黑|\bblack\b)/i.test(text)) return '#000000'
+  return undefined
+}
+
+export function imageArtifactRequirements(text) {
+  const size = String(text).match(/(\d{2,5})\s*[×xX*]\s*(\d{2,5})/)
+  const background = /(?:纯白|白色背景|white background|#fff(?:fff)?\b)/i.test(text) ? '#FFFFFF' : undefined
+  const hexColors = [...String(text).matchAll(/#[0-9a-f]{6}\b/gi)].map(match => match[0].toUpperCase())
+  const foreground = hexColors.find(color => color !== background) ?? namedColor(text)
+  if (!size || !background || !foreground) return null
+  return { width: Number(size[1]), height: Number(size[2]), background, foreground, foregroundTolerance: 48, minForegroundColorRatio: 0.8 }
+}
+
+function latestLocalPng(messages, cwd) {
+  let candidate
+  for (const message of messages) {
+    if (message?.role !== 'assistant' && message?.source?.kind !== 'tool') continue
+    const matches = messageText(message).match(/(?:[a-z]:[\\/][^`\r\n"']+?\.png|(?:\.{0,2}[\\/])?[a-z0-9_.\\/-]+\.png)/gi)
+    if (matches?.length) candidate = matches.at(-1)
+  }
+  if (!candidate) return undefined
+  const cleaned = candidate.replace(/[，。；、,:;!?！？)\]]+$/g, '')
+  const path = isAbsolute(cleaned) ? cleaned : resolve(cwd, cleaned)
+  return existsSync(path) ? path : undefined
+}
+
+export function inspectLatestImageArtifact(messages, cwd = process.cwd()) {
+  let userPrompt
+  let userIndex = -1
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && (message?.source?.kind === 'user' || message?.source === undefined)) {
+      userPrompt = messageText(message)
+      userIndex = index
+    }
+  }
+  const requirements = imageArtifactRequirements(userPrompt ?? '')
+  if (!requirements) return null
+  const path = latestLocalPng(messages.slice(userIndex + 1), cwd)
+  if (!path) return { pass: false, path: undefined, requirements, reason: 'no local PNG artifact was found in the completed turn' }
+  try {
+    return { ...validatePngArtifact({ input: path, ...requirements }), path, requirements }
+  } catch (error) {
+    return { pass: false, path, requirements, reason: error?.message ?? String(error) }
+  }
+}
+
+function artifactCorrectionMessage(inspection) {
+  const failed = inspection.checks ? Object.entries(inspection.checks).filter(([, passed]) => !passed).map(([name]) => name) : ['artifact']
+  const metrics = inspection.metrics ?? {}
+  return createUserMessage({
+    source: { kind: 'plugin', plugin: 'smart-model-router', form: 'notice', summary: '图片产物机器验收失败，要求修正' },
+    content: [{ type: 'text', text: [
+      '图片产物机器验收失败，当前回合不能声称完成。请修正并重新输出 PNG，然后自行核对。',
+      `失败项：${failed.join(', ')}。`,
+      `必须满足：${inspection.requirements.width}×${inspection.requirements.height}，背景 ${inspection.requirements.background}，主体颜色 ${inspection.requirements.foreground}。`,
+      inspection.path ? `当前文件：${inspection.path}。` : '当前回复没有可验证的本地 PNG 路径。',
+      metrics.foregroundMeanRgb ? `当前主体平均 RGB：${metrics.foregroundMeanRgb.join(',')}；目标色命中率：${Number(metrics.foregroundColorRatio ?? 0).toFixed(3)}。` : '',
+      '优先使用确定性像素操作，不要再次仅凭肉眼或文字宣称颜色和尺寸正确。',
+    ].filter(Boolean).join('\n') }],
+  })
 }
 
 function contentBlocks(message) {
@@ -140,7 +211,8 @@ export function capacityRequest(messages = [], step = {}) {
           : 'pdf'
     if (!inputModalities.includes(uploadedModality)) inputModalities.push(uploadedModality)
   }
-  const classifier = classifyTask({ text: classifierIntentText, inputModalities })
+  const classifierRoutingText = imageGeneration ? `${classifierIntentText}\ngenerate image output` : classifierIntentText
+  const classifier = classifyTask({ text: classifierRoutingText, inputModalities })
   const longMatch = text.match(/(?:约|大约|超过|至少)?\s*([\d,.]+)\s*(m|k|万|百万)?\s*(?:tokens?|上下文)/i)
   let minContextTokens
   if (longMatch) {
@@ -260,6 +332,7 @@ export function apply(ctx, config) {
   let inFlight = null
   let decisionSequence = 0
   const sessionRoutes = new WeakMap()
+  const artifactValidationTurns = new WeakMap()
 
   const decisionId = () => `route-${Date.now()}-${++decisionSequence}`
 
@@ -460,6 +533,25 @@ export function apply(ctx, config) {
     try { ctx.emit?.('smart-model-router/decision', legacyDecision) } catch {}
     console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'legacy-route', selected: `${resolved.config.provider}/${resolved.config.model}`, winner: decision.winner }))
     return resolved.config
+  })
+
+  ctx.on('agent/turn-stopping', ({ agent, turn }) => {
+    const session = agent?.session
+    if (!session || typeof session !== 'object') return
+    const messages = session.deriveMessages?.() ?? []
+    const inspection = inspectLatestImageArtifact(messages, session.header?.cwd ?? session.cwd ?? process.cwd())
+    if (!inspection) return
+    const previous = artifactValidationTurns.get(session)
+    const attempts = previous?.turn === turn ? previous.attempts : 0
+    if (inspection.pass) {
+      console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'artifact-validation-pass', turn, path: inspection.path, metrics: inspection.metrics }))
+      artifactValidationTurns.set(session, { turn, attempts, passed: true })
+      return
+    }
+    console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'artifact-validation-fail', turn, path: inspection.path, reason: inspection.reason, checks: inspection.checks, metrics: inspection.metrics, attempts }))
+    if (attempts >= 1) return
+    artifactValidationTurns.set(session, { turn, attempts: attempts + 1, passed: false })
+    agent.steer(artifactCorrectionMessage(inspection))
   })
 
   ctx.on('agent/request-error', async ({ agent, provider, failure }, next) => {

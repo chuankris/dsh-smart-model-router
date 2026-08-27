@@ -16,6 +16,7 @@ test('image edits and reference variations require image generation', () => {
     assert.equal(result.requestType, 'image-generation', prompt)
     assert.equal(result.required.imageGeneration, true, prompt)
     assert.deepEqual(result.providers, ['antigravity'], prompt)
+    assert.equal(result.classifier.label, 'image-generation', prompt)
   }
 })
 
@@ -25,6 +26,7 @@ test('negated edits and comparisons remain image understanding without tool dema
   assert.deepEqual(result.required.modalities, ['image'])
   assert.equal(result.required.imageGeneration, undefined)
   assert.equal(result.required.toolUse, undefined)
+  assert.equal(result.classifier.label, 'multimodal-understanding')
 })
 
 test('negating an edit does not hide a later positive variation request', () => {

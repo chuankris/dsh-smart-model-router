@@ -18,6 +18,7 @@ function harness(overrides = {}, runtime = {}) {
   let registration
   let listener
   let errorListener
+  let turnStoppingListener
   const ctx = {
     logger: { info() {}, warn() {} },
     llm: {
@@ -27,13 +28,31 @@ function harness(overrides = {}, runtime = {}) {
     on(name, callback) {
       if (name === 'agent/request') listener = callback
       else if (name === 'agent/request-error') errorListener = callback
+      else if (name === 'agent/turn-stopping') turnStoppingListener = callback
       else assert.fail(`unexpected event: ${name}`)
       return () => {}
     },
   }
   apply(ctx, { ...config, ...overrides })
-  return { get registration() { return registration }, get listener() { return listener }, get errorListener() { return errorListener } }
+  return { get registration() { return registration }, get listener() { return listener }, get errorListener() { return errorListener }, get turnStoppingListener() { return turnStoppingListener } }
 }
+
+test('artifact validation steers once when an exact image task has no verifiable PNG', () => {
+  const h = harness()
+  const messages = [
+    { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '生成 1024×1024 图片，纯白背景，红色圆形' }] },
+    { role: 'assistant', source: { kind: 'model' }, content: [{ type: 'text', text: '已经生成，完全符合要求。' }] },
+  ]
+  const steering = []
+  const session = { header: { cwd: process.cwd() }, deriveMessages: () => messages }
+  const agent = { session, steer: message => steering.push(message) }
+
+  h.turnStoppingListener({ agent, turn: 1 })
+  h.turnStoppingListener({ agent, turn: 1 })
+
+  assert.equal(steering.length, 1)
+  assert.match(steering[0].content[0].text, /没有可验证的本地 PNG 路径/)
+})
 
 test('registers the virtual Auto provider and model', async () => {
   const h = harness()
