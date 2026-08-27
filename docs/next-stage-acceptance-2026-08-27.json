@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-27",
+  "components": {
+    "dsh-smart-model-router": "0.4.0",
+    "dsh-provider-capacity": "0.7.0",
+    "dsh": "0.1.1-rc.2"
+  },
+  "automated": {
+    "routerUnit": { "passed": 20, "total": 20 },
+    "legacyBenchmark": { "passed": 12, "total": 12, "accuracy": 1 },
+    "v2Benchmark": { "passed": 6, "total": 6, "accuracy": 1 },
+    "capacityUnit": { "passed": 13, "total": 13 },
+    "calibration": { "baseline": 1, "best": 1, "policy": { "capability": 0.75, "capacity": 0.05, "evidence": 0.2 } },
+    "capacityBuild": "passed"
+  },
+  "runtime": [
+    { "id": "persistent-state", "status": "passed", "evidence": ["route decision restored after restart", "user feedback restored after restart", "exact-model quota feedback restored after restart"] },
+    { "id": "cross-restart-auto-lineage", "status": "passed", "beforeRestartCurrent": "antigravity/gemini-3.5-flash", "afterRestartSelected": "codex-chatgpt/gpt-5.6-sol" },
+    { "id": "image-generation-route", "status": "passed", "selected": "antigravity/gemini-3.1-flash-image" },
+    { "id": "image-generation-artifact", "status": "blocked_by_upstream_quota", "error": "429 QUOTA" },
+    { "id": "persisted-image-cooldown", "status": "passed", "requestHeaderCount": 0, "result": "fail-closed before provider call" },
+    { "id": "explainability-data", "status": "passed", "fields": ["selected", "alternatives", "rejected", "contributions", "capacity", "confidence", "outcome", "userFeedback"] }
+  ],
+  "remaining": [
+    "Generate and inspect a real image artifact after the upstream image quota resets",
+    "Capture a visual regression screenshot for the Capacity & Routing settings page",
+    "Persist successful outcomes with latency and token metrics",
+    "Move runtime state to a lock-safe store before multi-process deployment"
+  ]
+}

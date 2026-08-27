@@ -22,6 +22,7 @@ export const Config = z.object({
     enabled: z.boolean().default(true),
     url: z.string().default('http://127.0.0.1:3080/api/provider-capacity/recommend'),
     feedbackUrl: z.string().default('http://127.0.0.1:3080/api/provider-capacity/feedback'),
+    lineageUrl: z.string().default('http://127.0.0.1:3080/api/provider-capacity/lineage'),
     timeoutMs: z.number().step(1).min(100).default(8_000),
   }).default({}),
   routing: z.object({
@@ -90,7 +91,7 @@ function requestSignature(request) {
 
 export function capacityRequest(messages = [], step = {}) {
   const text = taskText(messages)
-  const imageGeneration = /(?:生成|创建|绘制|画|设计|制作).{0,16}(?:图片|图像|插画|海报|头像|封面)|(?:generate|create|draw|render|design).{0,18}(?:image|picture|illustration|poster|avatar)/i.test(text)
+  const imageGeneration = /(?:生成|创建|绘制|画|设计|制作)(?:一张|一个)?[^。\n]{0,48}(?:图片|图像|插画|海报|头像|封面|\b(?:png|jpe?g|webp|svg)\b)|(?:generate|create|draw|render|design).{0,36}(?:image|picture|illustration|poster|avatar|\b(?:png|jpe?g|webp|svg)\b)/i.test(text)
   const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(text)
   const coding = !imageGeneration && !videoGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
   const grounding = /(?:grounding|google\s*search|url\s*context|联网|搜索|检索|带来源|官方更新|今天|最新)/i.test(text)
@@ -181,6 +182,11 @@ export function chooseStickyCandidate(candidates, previous, signature, switchMar
   return advantage < switchMargin ? { candidate: prior, sticky: true, advantage } : { candidate: winner, sticky: false, advantage }
 }
 
+export function followsAutoLineage(proposed, previous, config) {
+  if (proposed.provider === config.autoProvider && proposed.model === config.autoModel) return true
+  return Boolean(previous && proposed.provider === previous.provider && proposed.model === previous.model)
+}
+
 function recommendedReasoning(model) {
   if (/spark/i.test(model)) return 'low'
   if (/mini/i.test(model)) return 'medium'
@@ -192,7 +198,25 @@ export function apply(ctx, config) {
   let cachedQuota = null
   let cachedAt = 0
   let inFlight = null
+  let decisionSequence = 0
   const sessionRoutes = new WeakMap()
+
+  const decisionId = () => `route-${Date.now()}-${++decisionSequence}`
+
+  async function recoverLineage(sessionKey, proposed) {
+    const sessionId = sessionKey?.id
+    if (!sessionId) return undefined
+    try {
+      const url = new URL(config.recommendation?.lineageUrl ?? 'http://127.0.0.1:3080/api/provider-capacity/lineage')
+      url.searchParams.set('sessionId', String(sessionId))
+      const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(1_500) })
+      if (!response.ok) return undefined
+      const body = await response.json()
+      const decision = body?.value
+      if (decision?.route?.provider !== proposed.provider || decision?.route?.model !== proposed.model) return undefined
+      return { provider: proposed.provider, model: proposed.model, signature: requestSignature(decision.request ?? {}), decisionId: decision.id }
+    } catch { return undefined }
+  }
 
   async function quotaStatus() {
     if (!config.quota.enabled) return null
@@ -264,8 +288,8 @@ export function apply(ctx, config) {
         }
         if (reasoningEffort) route.reasoningEffort = reasoningEffort
         else delete route.reasoningEffort
-        const decision = { source: 'provider-capacity', request, route, selected: candidate, recommended: result?.selected, sticky: selected.sticky, advantage: selected.advantage, rejected: result?.rejected ?? [] }
-        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, signature })
+        const decision = { id: decisionId(), sessionId: sessionKey?.id ? String(sessionKey.id) : undefined, source: 'provider-capacity', request, route, selected: candidate, recommended: result?.selected, alternatives: availableCandidates.filter(item => item.provider !== candidate.provider || item.model !== candidate.model), sticky: selected.sticky, advantage: selected.advantage, rejected: result?.rejected ?? [] }
+        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, signature, decisionId: decision.id })
         try { ctx.emit?.('smart-model-router/decision', decision) } catch {}
         return { route, decision }
       }
@@ -283,9 +307,18 @@ export function apply(ctx, config) {
   ctx.llm.registerAdapter([config.autoProvider], new VirtualAutoAdapter(config))
   ctx.on('agent/request', async ({ agent, step }, next) => {
     const proposed = await next()
-    if (proposed.provider !== config.autoProvider || proposed.model !== config.autoModel) return proposed
+    const sessionKey = agent?.session ?? agent
+    let previousRoute = sessionKey && typeof sessionKey === 'object' ? sessionRoutes.get(sessionKey) : undefined
+    if (!previousRoute && proposed.provider !== config.autoProvider) {
+      previousRoute = await recoverLineage(sessionKey, proposed)
+      if (previousRoute && sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, previousRoute)
+    }
+    if (!followsAutoLineage(proposed, previousRoute, config)) {
+      if (sessionKey && typeof sessionKey === 'object') sessionRoutes.delete(sessionKey)
+      return proposed
+    }
     const messages = agent?.session?.deriveMessages?.() ?? agent?.messages ?? step?.messages ?? []
-    const recommended = await capacityRoute(messages, step, proposed, agent?.session ?? agent)
+    const recommended = await capacityRoute(messages, step, proposed, sessionKey)
     if (recommended) return recommended.route
 
     const [quota, runtimeCapabilities] = await Promise.all([quotaStatus(), capabilities()])
@@ -297,7 +330,9 @@ export function apply(ctx, config) {
       decision.winner, decision.score.toFixed(3), decision.features.demand.toFixed(2),
       decision.components.remaining ?? 'unknown', decision.rejected.map((item) => `${item.id}:${item.reason}`).join('|') || 'none',
     )
-    try { ctx.emit?.('smart-model-router/decision', { source: 'legacy', ...decision, route: resolved.config }) } catch {}
+    const legacyDecision = { id: decisionId(), sessionId: sessionKey?.id ? String(sessionKey.id) : undefined, source: 'legacy', request: capacityRequest(messages, step), route: resolved.config, selected: { provider: resolved.config.provider, model: resolved.config.model, score: decision.score, capacity: { state: decision.components?.remaining === undefined ? 'unknown' : 'available', remainingRatio: typeof decision.components?.remaining === 'number' ? decision.components.remaining / 100 : undefined } }, alternatives: [], sticky: false, rejected: decision.rejected ?? [], legacy: decision }
+    if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: resolved.config.provider, model: resolved.config.model, signature: requestSignature(legacyDecision.request), decisionId: legacyDecision.id })
+    try { ctx.emit?.('smart-model-router/decision', legacyDecision) } catch {}
     console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'legacy-route', selected: `${resolved.config.provider}/${resolved.config.model}`, winner: decision.winner }))
     return resolved.config
   })
@@ -318,6 +353,9 @@ export function apply(ctx, config) {
       } catch (error) {
         ctx.logger.warn('smart-model-router: runtime capacity feedback failed: %s', error?.message ?? error)
       }
+    }
+    if (previous?.decisionId) {
+      try { ctx.emit?.('smart-model-router/outcome', { decisionId: previous.decisionId, status: 'failed', code, reason: failure?.message }) } catch {}
     }
     return next()
   })
