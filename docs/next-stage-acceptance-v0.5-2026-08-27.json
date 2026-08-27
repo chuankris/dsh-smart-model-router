@@ -45,10 +45,10 @@
       ]
     },
     "liveBrowserVisualAcceptance": {
-      "status": "blocked",
+      "status": "passed",
       "browserBridge": "connected",
       "categoryDiscovery": "passed",
-      "reason": "On the latest DSH build 141eb6f, the settings sidebar closes but the settings dialog remains only in the hidden DOM, so the routing card cannot be visually captured."
+      "manualUserAcceptance": "Settings -> Capacity & Routing opens successfully on DSH build 141eb6f."
     }
   },
   "releasePolicy": {

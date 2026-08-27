@@ -1,6 +1,7 @@
 import z from '@deepseek-ai/schemastery'
 import { AUTO_MODEL, AUTO_PROVIDER, DEFAULT_CANDIDATES, resolveAutoRoute } from './core.js'
 import { classifyTask } from './lightweight-classifier.js'
+import { EVALUATION_POLICY, classifierRolloutGate, executionPolicy } from './evaluation-policy.js'
 
 const affinitySchema = z.object({
   simple: z.number(), coding: z.number(), writing: z.number(), analysis: z.number(), vision: z.number(),
@@ -156,11 +157,13 @@ export function capacityRequest(messages = [], step = {}) {
                 ? { speed: 0.45, costEfficiency: 0.35, coding: 0.1, reliability: 0.1 }
                 : { coding: 0.25, reliability: 0.25, speed: 0.2, costEfficiency: 0.2, agentic: 0.1 }
 
+  const requestType = imageGeneration ? 'image-generation' : videoGeneration ? 'video-generation' : inputModalities.length ? 'multimodal-understanding' : 'text'
   return {
-    requestType: imageGeneration ? 'image-generation' : videoGeneration ? 'video-generation' : inputModalities.length ? 'multimodal-understanding' : 'text',
+    requestType,
     required: Object.fromEntries(Object.entries(required).filter(([, value]) => value !== undefined)),
     weights,
-    classifier: { mode: 'shadow', ...classifier },
+    classifier: { mode: 'shadow', ...classifier, gate: classifierRolloutGate(classifier) },
+    executionPolicy: executionPolicy(requestType),
     ...(providers ? { providers } : {}),
   }
 }
@@ -349,7 +352,7 @@ export function apply(ctx, config) {
         await fetch(config.recommendation?.feedbackUrl ?? 'http://127.0.0.1:3080/api/provider-capacity/feedback', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ provider: previous.provider, model: previous.model, code, reason: failure?.message, retryAfterMs: 300_000 }),
+          body: JSON.stringify({ provider: previous.provider, model: previous.model, code, reason: failure?.message, retryAfterMs: /QUOTA/i.test(code) ? EVALUATION_POLICY.hiddenQuotaProbe.exactQuotaCooldownMs : 300_000 }),
           signal: AbortSignal.timeout(2_000),
         })
         console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'runtime-feedback', provider: previous.provider, model: previous.model, code }))
