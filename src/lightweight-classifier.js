@@ -3,7 +3,7 @@ const LABELS = Object.freeze(['general-text', 'simple-text', 'production-coding'
 const FEATURES = Object.freeze([
   { id: 'image-output', pattern: /(?:生成|创建|绘制|画|设计|制作)(?:一张|一个)?[^。\n]{0,48}(?:图片|图像|插画|海报|头像|封面|\b(?:png|jpe?g|webp|svg)\b)|(?:generate|create|draw|render|design).{0,36}(?:image|picture|illustration|poster|avatar|\b(?:png|jpe?g|webp|svg)\b)/i, weights: { 'image-generation': 6 } },
   { id: 'video-output', pattern: /(?:生成|创建|制作).{0,20}(?:视频|影片|动画)|(?:generate|create|render).{0,24}(?:video|movie|animation)/i, weights: { 'video-generation': 6 } },
-  { id: 'production', pattern: /生产级|生产事故|线上事故|高风险编码|零停机|回滚补丁|修改多个文件|完整测试|production|incident|rollback|multi-?file/i, weights: { 'production-coding': 4.2 } },
+  { id: 'production', pattern: /生产级|生产事故|线上事故|高风险编码|零停机|回滚补丁|修改多个文件|完整测试|支付|财务|记账|资金|事务内幂等|重复回调|只记账一次|崩溃后恢复|故障恢复|数据一致性|权限|认证|漏洞|production|incident|rollback|payment|ledger|transactional idempotency|crash recovery|data consistency|multi-?file/i, weights: { 'production-coding': 4.2 } },
   { id: 'coding', pattern: /typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|重构|仓库|package/i, weights: { 'production-coding': 1.2, 'batch-coding': 0.5 } },
   { id: 'batch', pattern: /批量|批处理|成本优先|吞吐优先|大批量|高并发|万条|十万条|百万条|batch|throughput|cost[- ]first/i, weights: { 'batch-coding': 4.5 } },
   { id: 'long-context', pattern: /(?:800\s*k|1\s*m|百万|100\s*万|超长).{0,16}(?:tokens?|上下文|文档|代码库)|中文历史决策|中文知识库/i, weights: { 'long-context': 5 } },

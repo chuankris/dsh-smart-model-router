@@ -64,6 +64,25 @@ test('DSH uploaded image paths are treated as image inputs', () => {
   assert.equal(request.classifier.label, 'multimodal-understanding')
 })
 
+test('relative DSH upload paths followed by Chinese punctuation remain image inputs', () => {
+  const request = capacityRequest([
+    userMessage('请查看 .dsh-uploads/session-test/cat.png，只回答主要颜色。'),
+  ])
+
+  assert.equal(request.requestType, 'multimodal-understanding')
+  assert.deepEqual(request.required.modalities, ['image'])
+  assert.equal(request.classifier.label, 'multimodal-understanding')
+})
+
+test('absolute DSH upload paths followed by Chinese punctuation remain image inputs', () => {
+  const request = capacityRequest([
+    userMessage('请查看 D:\\dsh\\.dsh-uploads\\session-test\\cat.png，只回答主要颜色。'),
+  ])
+
+  assert.equal(request.requestType, 'multimodal-understanding')
+  assert.deepEqual(request.required.modalities, ['image'])
+})
+
 test('ordinary image-looking paths do not impersonate DSH uploads', () => {
   const request = capacityRequest([
     userMessage('请检查 C:\\temp\\cat.png 的命名是否清晰，不要读取文件。'),

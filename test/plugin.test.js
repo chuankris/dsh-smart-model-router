@@ -95,6 +95,25 @@ test('image recommendation timeout fails clearly when tools are forbidden', asyn
   } finally { globalThis.fetch = originalFetch }
 })
 
+test('unknown runtime context fails closed instead of falling back to a guessed long-context route', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ ok: true, value: { selected: { provider: 'kimi', model: 'kimi-k3', score: 0.92 }, alternatives: [] } }),
+  })
+  try {
+    const h = harness(
+      { recommendation: { enabled: true, url: 'http://recommend.local', timeoutMs: 100 } },
+      { resolveModelInfo: async () => ({ inputModalities: ['text'], reasoningEfforts: [] }) },
+    )
+    const agent = { session: { deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '分析约 1M tokens 的中文技术文档和中文知识库，不调用工具。' }] }] } }
+    await assert.rejects(
+      () => h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' })),
+      /minimum context unavailable.*at least 1000000 tokens/,
+    )
+  } finally { globalThis.fetch = originalFetch }
+})
+
 test('session stickiness suppresses a near-tie provider switch', async () => {
   const originalFetch = globalThis.fetch
   let call = 0

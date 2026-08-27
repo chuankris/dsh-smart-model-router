@@ -103,7 +103,7 @@ export function capacityRequest(messages = [], step = {}) {
   const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
   const toolUse = !noTools && (hasToolHistory || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现|运行测试|终端|浏览器/i.test(text))
   const inputModalities = ['image', 'audio', 'video', 'pdf'].filter(modality => hasInputModality(messages, modality))
-  const uploadedFile = text.match(/(?:^|\s)(?:[a-z]:)?[^\s\r\n]*[\\/]\.dsh-uploads[\\/][^\s\r\n]+\.(png|jpe?g|webp|gif|bmp|mp3|wav|m4a|aac|ogg|mp4|mov|webm|mkv|pdf)(?=\s|$)/i)
+  const uploadedFile = text.match(/(?:^|\s)(?:(?:[a-z]:)?[^\s\r\n]*[\\/])?\.dsh-uploads[\\/][^\s\r\n]+\.(png|jpe?g|webp|gif|bmp|mp3|wav|m4a|aac|ogg|mp4|mov|webm|mkv|pdf)(?=\s|$|[，。；、,:;!?！？)])/i)
   if (uploadedFile) {
     const extension = uploadedFile[1].toLowerCase()
     const uploadedModality = /^(?:png|jpe?g|webp|gif|bmp)$/.test(extension)
@@ -132,7 +132,7 @@ export function capacityRequest(messages = [], step = {}) {
   const kimiAffinity = minContextTokens >= 800_000
     && /(?:中文技术文档|中文代码注释|中文知识库|中文语料|中文历史决策)/i.test(text)
   const gptAffinity = coding
-    && /(?:生产级|生产事故|线上事故|高风险编码|实际修改|修改多个文件|运行测试|可回滚补丁|构建中断)/i.test(text)
+    && /(?:生产级|生产事故|线上事故|高风险编码|实际修改|修改多个文件|运行测试|可回滚补丁|构建中断|支付|财务|记账|资金|事务内幂等|重复回调|只记账一次|崩溃后恢复|故障恢复|数据一致性|权限|认证|漏洞|payment|ledger|transactional idempotency|crash recovery|data consistency)/i.test(text)
   const volcAffinity = coding
     && /(?:批量生成|批处理|成本优先|吞吐优先|大批量|高并发生成)/i.test(text)
   const providers = imageGeneration
@@ -188,7 +188,10 @@ export function runtimeSatisfiesRequest(info, request) {
     for (const modality of request.required?.modalities ?? []) if (!declaredModalities.includes(modality)) return false
   }
   const declaredContext = Number(info.maxInputTokens ?? info.contextWindow ?? info.contextWindowTokens)
-  if (request.required?.minContextTokens && Number.isFinite(declaredContext) && declaredContext < request.required.minContextTokens) return false
+  if (request.required?.minContextTokens) {
+    if (!Number.isFinite(declaredContext)) return false
+    if (declaredContext < request.required.minContextTokens) return false
+  }
   return true
 }
 
@@ -281,6 +284,7 @@ export function apply(ctx, config) {
     if (config.recommendation?.enabled === false) return null
     const request = capacityRequest(messages, step)
     const generationRequired = Boolean(request.required.imageGeneration || request.required.videoGeneration)
+    const contextRequired = Number(request.required.minContextTokens) > 0
     const signature = requestSignature(request)
 
     async function toolAssistedFallback(reason) {
@@ -361,6 +365,9 @@ export function apply(ctx, config) {
         if (!request.executionPolicy?.allowToolAssisted) throw new Error(`${reason.message}; tools were explicitly forbidden`)
         throw reason
       }
+      if (contextRequired) {
+        throw new Error(`no registered model declares a context window of at least ${request.required.minContextTokens} tokens`)
+      }
       ctx.logger.warn('capacity recommendation returned no model registered in DSH; using legacy router')
       console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-empty', recommended: result?.selected ? `${result.selected.provider}/${result.selected.model}` : null, candidates: candidates.map((item) => `${item.provider}/${item.model}`), requestType: request.requestType }))
     } catch (error) {
@@ -373,6 +380,9 @@ export function apply(ctx, config) {
           ? `${error?.message ?? error}; no tool-assisted model is registered`
           : `${error?.message ?? error}; tools were explicitly forbidden`
         throw new Error(`smart-model-router: ${request.requestType} unavailable: ${detail}`)
+      }
+      if (contextRequired) {
+        throw new Error(`smart-model-router: minimum context unavailable: ${error?.message ?? error}`)
       }
       ctx.logger.warn('capacity recommendation failed; using legacy router: %s', error?.message ?? error)
       console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-fallback', requestType: request.requestType, error: error?.message ?? String(error) }))

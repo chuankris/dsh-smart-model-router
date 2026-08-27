@@ -32,6 +32,16 @@ test('short follow-up inherits the preceding task profile', () => {
   assert.deepEqual(request.providers, ['codex-chatgpt'])
 })
 
+test('Chinese payment consistency and crash recovery require the strong coding provider', () => {
+  const request = capacityRequest([
+    user('设计一个 TypeScript 支付回调处理器：数据库事务内幂等，并发重复回调只记账一次，外部通知使用 outbox，进程崩溃后可恢复。不要调用工具。'),
+  ])
+  assert.equal(request.classifier.label, 'production-coding')
+  assert.ok(request.classifier.features.includes('production'))
+  assert.deepEqual(request.providers, ['codex-chatgpt'])
+  assert.equal(request.required.toolUse, undefined)
+})
+
 test('synthetic DSH context after the user prompt does not contaminate classification', () => {
   const request = capacityRequest([
     user('你好，请只用一句话解释布隆过滤器，不调用工具。'),
@@ -50,6 +60,7 @@ test('available tools alone do not imply tool use', () => {
 
 test('runtime modality and context declarations are hard constraints when present', () => {
   assert.equal(runtimeSatisfiesRequest({ inputModalities: ['text'] }, { required: { modalities: ['image'] } }), false)
+  assert.equal(runtimeSatisfiesRequest({ inputModalities: ['text'] }, { required: { minContextTokens: 800_000 } }), false)
   assert.equal(runtimeSatisfiesRequest({ inputModalities: ['text', 'image'], contextWindow: 500_000 }, { required: { modalities: ['image'], minContextTokens: 800_000 } }), false)
   assert.equal(runtimeSatisfiesRequest({ inputModalities: ['text', 'image'], contextWindow: 1_000_000 }, { required: { modalities: ['image'], minContextTokens: 800_000 } }), true)
 })
