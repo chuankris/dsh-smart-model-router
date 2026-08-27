@@ -21,6 +21,12 @@ export const Config = z.object({
   recommendation: z.object({
     enabled: z.boolean().default(true),
     url: z.string().default('http://127.0.0.1:3080/api/provider-capacity/recommend'),
+    feedbackUrl: z.string().default('http://127.0.0.1:3080/api/provider-capacity/feedback'),
+    timeoutMs: z.number().step(1).min(100).default(8_000),
+  }).default({}),
+  routing: z.object({
+    sticky: z.boolean().default(true),
+    switchMargin: z.number().min(0).max(1).default(0.05),
   }).default({}),
   candidates: z.array(candidateSchema).default(DEFAULT_CANDIDATES),
   policy: z.object({
@@ -54,14 +60,45 @@ function messageText(value) {
   return messageText(value.text ?? value.content ?? value.message ?? '')
 }
 
-function capacityRequest(messages = [], step = {}) {
-  const latestUserMessage = [...messages].reverse().find((message) => message?.role === 'user')
-  const text = messageText(latestUserMessage ?? messages.at(-1))
-  const coding = /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|重构|迁移|依赖|仓库|package)/i.test(text)
+function contentBlocks(message) {
+  return Array.isArray(message?.content) ? message.content : []
+}
+
+function hasInputModality(messages, modality) {
+  const aliases = new Set([modality, `input_${modality}`, `${modality}_url`, `${modality}-url`])
+  return messages.some(message => contentBlocks(message).some(block => aliases.has(String(block?.type ?? '').toLowerCase())))
+}
+
+function taskText(messages) {
+  const userTexts = messages
+    .filter((message) => {
+      if (message?.role !== 'user') return false
+      const sourceKind = String(message?.source?.kind ?? '').toLowerCase()
+      if (['context', 'system', 'injection'].includes(sourceKind)) return false
+      const text = messageText(message).trim()
+      return !/^(?:Current runtime context\.|<system-reminder>)/i.test(text)
+    })
+    .map(messageText).map(value => value.trim()).filter(Boolean)
+  const latest = userTexts.at(-1) ?? messageText(messages.at(-1))
+  if (latest.length >= 32 || userTexts.length < 2) return latest
+  return `${userTexts.at(-2)}\nFollow-up: ${latest}`
+}
+
+function requestSignature(request) {
+  return JSON.stringify({ requestType: request.requestType, required: request.required, providers: request.providers ?? [] })
+}
+
+export function capacityRequest(messages = [], step = {}) {
+  const text = taskText(messages)
+  const imageGeneration = /(?:生成|创建|绘制|画|设计|制作).{0,16}(?:图片|图像|插画|海报|头像|封面)|(?:generate|create|draw|render|design).{0,18}(?:image|picture|illustration|poster|avatar)/i.test(text)
+  const videoGeneration = /(?:生成|创建|制作).{0,16}(?:视频|影片|动画)|(?:generate|create|render).{0,18}(?:video|movie|animation)/i.test(text)
+  const coding = !imageGeneration && !videoGeneration && /(?:code|coding|typescript|javascript|python|java|golang|rust|代码|编码|编程|修复|调试|测试|重构|迁移|依赖|仓库|package)/i.test(text)
   const grounding = /(?:grounding|google\s*search|url\s*context|联网|搜索|检索|带来源|官方更新|今天|最新)/i.test(text)
   const structuredOutput = /(?:json|schema|结构化输出)/i.test(text)
-  const noTools = /(?:不要|无需|不需要|禁止).{0,8}(?:调用|使用).{0,6}工具|(?:without|no)\s+tools?/i.test(text)
-  const toolUse = !noTools && (Boolean(step?.tools?.length) || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现/i.test(text))
+  const noTools = /(?:不|不要|无需|不需要|禁止).{0,8}(?:调用|使用).{0,6}工具|(?:without|no)\s+tools?/i.test(text)
+  const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
+  const toolUse = !noTools && (hasToolHistory || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现|运行测试|终端|浏览器/i.test(text))
+  const inputModalities = ['image', 'audio', 'video', 'pdf'].filter(modality => hasInputModality(messages, modality))
   const longMatch = text.match(/(?:约|大约|超过|至少)?\s*([\d,.]+)\s*(m|k|万|百万)?\s*(?:tokens?|上下文)/i)
   let minContextTokens
   if (longMatch) {
@@ -81,18 +118,26 @@ function capacityRequest(messages = [], step = {}) {
     && /(?:生产级|生产事故|线上事故|高风险编码|实际修改|修改多个文件|运行测试|可回滚补丁|构建中断)/i.test(text)
   const volcAffinity = coding
     && /(?:批量生成|批处理|成本优先|吞吐优先|大批量|高并发生成)/i.test(text)
-  const providers = kimiAffinity
+  const providers = imageGeneration
+    ? ['antigravity']
+    : kimiAffinity
     ? ['kimi']
     : gptAffinity ? ['codex-chatgpt'] : volcAffinity ? ['volcengine'] : undefined
   const required = {
     coding: coding || undefined,
     toolUse: (toolUse || gptAffinity) || undefined,
-    modalities: messages.some(message => /image/i.test(JSON.stringify(message))) ? ['image'] : undefined,
+    modalities: inputModalities.length ? inputModalities : undefined,
     minContextTokens,
     grounding: grounding || undefined,
     structuredOutput: structuredOutput || undefined,
+    imageGeneration: imageGeneration || undefined,
+    videoGeneration: videoGeneration || undefined,
   }
-  const weights = gptAffinity
+  const weights = imageGeneration
+    ? { multimodal: 0.6, reliability: 0.18, speed: 0.12, costEfficiency: 0.1 }
+    : videoGeneration
+      ? { multimodal: 0.55, reliability: 0.2, speed: 0.15, costEfficiency: 0.1 }
+      : gptAffinity
     ? { coding: 0.4, agentic: 0.25, reasoning: 0.2, reliability: 0.15 }
     : volcAffinity
       ? { coding: 0.4, agentic: 0.25, costEfficiency: 0.2, speed: 0.15 }
@@ -109,10 +154,31 @@ function capacityRequest(messages = [], step = {}) {
                 : { coding: 0.25, reliability: 0.25, speed: 0.2, costEfficiency: 0.2, agentic: 0.1 }
 
   return {
+    requestType: imageGeneration ? 'image-generation' : videoGeneration ? 'video-generation' : inputModalities.length ? 'multimodal-understanding' : 'text',
     required: Object.fromEntries(Object.entries(required).filter(([, value]) => value !== undefined)),
     weights,
     ...(providers ? { providers } : {}),
   }
+}
+
+export function runtimeSatisfiesRequest(info, request) {
+  if (!info) return false
+  const declaredModalities = info.inputModalities ?? info.modalities
+  if (Array.isArray(declaredModalities)) {
+    for (const modality of request.required?.modalities ?? []) if (!declaredModalities.includes(modality)) return false
+  }
+  const declaredContext = Number(info.maxInputTokens ?? info.contextWindow ?? info.contextWindowTokens)
+  if (request.required?.minContextTokens && Number.isFinite(declaredContext) && declaredContext < request.required.minContextTokens) return false
+  return true
+}
+
+export function chooseStickyCandidate(candidates, previous, signature, switchMargin = 0.05) {
+  const winner = candidates[0]
+  if (!winner || !previous || previous.signature !== signature) return { candidate: winner, sticky: false, advantage: undefined }
+  const prior = candidates.find(candidate => candidate.provider === previous.provider && candidate.model === previous.model)
+  if (!prior || (prior.provider === winner.provider && prior.model === winner.model)) return { candidate: winner, sticky: false, advantage: undefined }
+  const advantage = Number(winner.score ?? 0) - Number(prior.score ?? 0)
+  return advantage < switchMargin ? { candidate: prior, sticky: true, advantage } : { candidate: winner, sticky: false, advantage }
 }
 
 function recommendedReasoning(model) {
@@ -126,6 +192,7 @@ export function apply(ctx, config) {
   let cachedQuota = null
   let cachedAt = 0
   let inFlight = null
+  const sessionRoutes = new WeakMap()
 
   async function quotaStatus() {
     if (!config.quota.enabled) return null
@@ -154,28 +221,42 @@ export function apply(ctx, config) {
     return result
   }
 
-  async function capacityRoute(messages, step, proposed) {
+  async function capacityRoute(messages, step, proposed, sessionKey) {
     if (config.recommendation?.enabled === false) return null
+    const request = capacityRequest(messages, step)
     try {
       const response = await fetch(config.recommendation?.url ?? 'http://127.0.0.1:3080/api/provider-capacity/recommend', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(capacityRequest(messages, step)),
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(config.recommendation?.timeoutMs ?? 8_000),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const payload = await response.json()
       const result = payload?.value ?? payload
       const candidates = [result?.selected, ...(result?.alternatives ?? [])].filter(Boolean)
+      const availableCandidates = []
       for (const candidate of candidates) {
         let available = null
         try { available = await ctx.llm.resolveModelInfo(candidate.provider, candidate.model) } catch {}
-        if (!available) continue
+        if (!runtimeSatisfiesRequest(available, request)) continue
+        availableCandidates.push(candidate)
+      }
+      const signature = requestSignature(request)
+      const previous = sessionKey && typeof sessionKey === 'object' ? sessionRoutes.get(sessionKey) : undefined
+      const selected = config.routing?.sticky === false
+        ? { candidate: availableCandidates[0], sticky: false }
+        : chooseStickyCandidate(availableCandidates, previous, signature, config.routing?.switchMargin ?? 0.05)
+      const candidate = selected.candidate
+      if (candidate) {
+        const available = await ctx.llm.resolveModelInfo(candidate.provider, candidate.model)
         const preferredEffort = recommendedReasoning(candidate.model) ?? proposed.reasoningEffort
         const supportedEfforts = Array.isArray(available.reasoningEfforts) ? available.reasoningEfforts : []
         const reasoningEffort = supportedEfforts.includes(preferredEffort)
           ? preferredEffort
           : supportedEfforts.includes('high') ? 'high' : supportedEfforts[0]
-        ctx.logger.info('capacity recommendation: %s/%s (score=%s)', candidate.provider, candidate.model, candidate.score ?? 'n/a')
+        ctx.logger.info('capacity recommendation: %s/%s (score=%s sticky=%s)', candidate.provider, candidate.model, candidate.score ?? 'n/a', selected.sticky)
+        console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-route', request, recommended: result?.selected ? `${result.selected.provider}/${result.selected.model}` : null, selected: `${candidate.provider}/${candidate.model}`, sticky: selected.sticky, availableCandidates: availableCandidates.length }))
         const route = {
           ...proposed,
           provider: candidate.provider,
@@ -183,11 +264,18 @@ export function apply(ctx, config) {
         }
         if (reasoningEffort) route.reasoningEffort = reasoningEffort
         else delete route.reasoningEffort
-        return route
+        const decision = { source: 'provider-capacity', request, route, selected: candidate, recommended: result?.selected, sticky: selected.sticky, advantage: selected.advantage, rejected: result?.rejected ?? [] }
+        if (sessionKey && typeof sessionKey === 'object') sessionRoutes.set(sessionKey, { provider: route.provider, model: route.model, signature })
+        try { ctx.emit?.('smart-model-router/decision', decision) } catch {}
+        return { route, decision }
       }
+      if (request.required.imageGeneration || request.required.videoGeneration) throw new Error(`no registered model satisfies ${request.requestType}`)
       ctx.logger.warn('capacity recommendation returned no model registered in DSH; using legacy router')
+      console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-empty', recommended: result?.selected ? `${result.selected.provider}/${result.selected.model}` : null, candidates: candidates.map((item) => `${item.provider}/${item.model}`), requestType: request.requestType }))
     } catch (error) {
+      if (request.required.imageGeneration || request.required.videoGeneration) throw new Error(`smart-model-router: ${request.requestType} unavailable: ${error?.message ?? error}`)
       ctx.logger.warn('capacity recommendation failed; using legacy router: %s', error?.message ?? error)
+      console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'capacity-fallback', requestType: request.requestType, error: error?.message ?? String(error) }))
     }
     return null
   }
@@ -197,11 +285,11 @@ export function apply(ctx, config) {
     const proposed = await next()
     if (proposed.provider !== config.autoProvider || proposed.model !== config.autoModel) return proposed
     const messages = agent?.session?.deriveMessages?.() ?? agent?.messages ?? step?.messages ?? []
-    const recommended = await capacityRoute(messages, step, proposed)
-    if (recommended) return recommended
+    const recommended = await capacityRoute(messages, step, proposed, agent?.session ?? agent)
+    if (recommended) return recommended.route
 
     const [quota, runtimeCapabilities] = await Promise.all([quotaStatus(), capabilities()])
-    const resolved = resolveAutoRoute({ proposed, messages: agent.session.deriveMessages(), step, config, quota, runtimeCapabilities })
+    const resolved = resolveAutoRoute({ proposed, messages, step, config, quota, runtimeCapabilities })
     const decision = resolved.decision
     ctx.logger.info(
       'smart-model-router: %s/%s -> %s/%s (winner=%s score=%s demand=%s quota=%s%% rejected=%s)',
@@ -209,6 +297,28 @@ export function apply(ctx, config) {
       decision.winner, decision.score.toFixed(3), decision.features.demand.toFixed(2),
       decision.components.remaining ?? 'unknown', decision.rejected.map((item) => `${item.id}:${item.reason}`).join('|') || 'none',
     )
+    try { ctx.emit?.('smart-model-router/decision', { source: 'legacy', ...decision, route: resolved.config }) } catch {}
+    console.info('[dsh-smart-model-router]', JSON.stringify({ event: 'legacy-route', selected: `${resolved.config.provider}/${resolved.config.model}`, winner: decision.winner }))
     return resolved.config
+  })
+
+  ctx.on('agent/request-error', async ({ agent, provider, failure }, next) => {
+    const sessionKey = agent?.session ?? agent
+    const previous = sessionKey && typeof sessionKey === 'object' ? sessionRoutes.get(sessionKey) : undefined
+    const code = String(failure?.code ?? '')
+    if (previous && previous.provider === provider && /QUOTA|RATE_LIMIT/i.test(code)) {
+      try {
+        await fetch(config.recommendation?.feedbackUrl ?? 'http://127.0.0.1:3080/api/provider-capacity/feedback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ provider: previous.provider, model: previous.model, code, reason: failure?.message, retryAfterMs: 300_000 }),
+          signal: AbortSignal.timeout(2_000),
+        })
+        console.warn('[dsh-smart-model-router]', JSON.stringify({ event: 'runtime-feedback', provider: previous.provider, model: previous.model, code }))
+      } catch (error) {
+        ctx.logger.warn('smart-model-router: runtime capacity feedback failed: %s', error?.message ?? error)
+      }
+    }
+    return next()
   })
 }

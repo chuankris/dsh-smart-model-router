@@ -1,0 +1,8 @@
+[
+  {"id":"T8","name":"图片理解","prompt":"请使用 read_image 查看上传图片，回答主要对象、相对位置和顶部文字。","expected":{"requestType":"multimodal-understanding","providerAnyOf":["antigravity","codex-chatgpt","kimi"]}},
+  {"id":"T9","name":"图片生成","prompt":"生成一张 1024×1024 PNG：米白背景，左侧蓝色正方形，右侧红色圆形，顶部写 ROUTE IMAGE GEN 824。","expected":{"requestType":"image-generation","provider":"antigravity","model":"gemini-3.1-flash-image"}},
+  {"id":"T10","name":"短续问粘性","turns":["修复生产事故，修改多个文件、运行测试并提供回滚补丁。","继续"],"expected":{"provider":"codex-chatgpt","stableAcrossTurns":true}},
+  {"id":"T11","name":"近似平局迟滞","prompt":"分析一个中等复杂度的代码架构并给出实施计划。","expected":{"switchOnlyWhenScoreMarginAtLeast":0.05}},
+  {"id":"T12","name":"推荐服务超时降级","prompt":"把 hello 翻译成中文。","fault":{"recommendationTimeout":true},"expected":{"fallback":"legacy","completed":true}},
+  {"id":"T13","name":"视频生成失败关闭","prompt":"生成一个 10 秒产品介绍视频。","expected":{"requestType":"video-generation","failsClosedWhenUnsupported":true}}
+]

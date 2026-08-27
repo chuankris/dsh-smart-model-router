@@ -1,0 +1,239 @@
+{
+  "reportVersion": "1.0.0",
+  "generatedAt": "2026-08-27",
+  "language": "zh-CN",
+  "scope": [
+    "dsh-smart-model-router",
+    "dsh-provider-capacity",
+    "dsh-antigravity",
+    "DSH local web runtime"
+  ],
+  "environment": {
+    "dshVersion": "0.1.1-rc.2",
+    "dshBuild": "141eb6f",
+    "dshUrl": "http://127.0.0.1:3080/",
+    "routerVersion": "0.3.4",
+    "capacityVersion": "0.6.1",
+    "antigravityVersion": "0.0.4+local.patch"
+  },
+  "acceptanceSummary": {
+    "coreRouting": "passed",
+    "sessionStickiness": "passed",
+    "runtimeCapabilityFiltering": "passed",
+    "quotaFeedbackLoop": "passed",
+    "multimodalUnderstanding": "passed",
+    "imageGenerationRouting": "passed",
+    "imageGenerationArtifact": "blocked_by_upstream_quota",
+    "videoFailClosed": "passed",
+    "overall": "passed_with_external_blocker"
+  },
+  "implementedChanges": [
+    "Filter synthetic DSH runtime context and system injection messages before task classification",
+    "Classify text, multimodal understanding, image generation and video generation separately",
+    "Apply capability and context hard filters before preference scoring",
+    "Add session stickiness with a switch margin",
+    "Raise capacity recommendation timeout from 3 seconds to 8 seconds",
+    "Add structured routing logs",
+    "Report quota and rate-limit request errors to provider-capacity",
+    "Add exact-model runtime feedback with a default five-minute cooldown",
+    "Add shared quota pools and stale-data confidence multipliers",
+    "Patch dsh-antigravity with prepareCall compatibility and durable image attachment forwarding"
+  ],
+  "automatedTests": [
+    {
+      "component": "dsh-smart-model-router",
+      "suite": "unit",
+      "command": "npm test",
+      "passed": 19,
+      "failed": 0,
+      "status": "passed"
+    },
+    {
+      "component": "dsh-smart-model-router",
+      "suite": "routing-benchmark",
+      "command": "npm run benchmark",
+      "passed": 12,
+      "failed": 0,
+      "accuracy": 1.0,
+      "status": "passed"
+    },
+    {
+      "component": "dsh-provider-capacity",
+      "suite": "unit",
+      "command": "npm test",
+      "passed": 11,
+      "failed": 0,
+      "status": "passed"
+    },
+    {
+      "component": "dsh-provider-capacity",
+      "suite": "build",
+      "command": "npm run build",
+      "status": "passed",
+      "warnings": [
+        "tsdown external is deprecated; migrate to deps.neverBundle"
+      ]
+    }
+  ],
+  "liveTests": [
+    {
+      "id": "T1",
+      "scenario": "simple Chinese explanation without tools",
+      "expectedProvider": "antigravity",
+      "expectedModel": "gemini-3.5-flash",
+      "actualProvider": "antigravity",
+      "actualModel": "gemini-3.5-flash",
+      "status": "passed",
+      "metrics": {
+        "inputTokens": 15306,
+        "outputTokens": 475,
+        "totalSeconds": 6.28,
+        "ttftSeconds": 6.12
+      }
+    },
+    {
+      "id": "T1G",
+      "scenario": "same-session follow-up",
+      "expectedModel": "gemini-3.5-flash",
+      "actualModel": "gemini-3.5-flash",
+      "status": "passed",
+      "metrics": {
+        "totalSeconds": 4.45,
+        "ttftSeconds": 4.41
+      }
+    },
+    {
+      "id": "T2",
+      "scenario": "production TypeScript rate limiter plan",
+      "expectedProvider": "codex-chatgpt",
+      "actualProvider": "codex-chatgpt",
+      "actualModel": "gpt-5.6-sol",
+      "status": "passed"
+    },
+    {
+      "id": "T3",
+      "scenario": "one-million-token Chinese technical corpus and historical decisions",
+      "expectedProvider": "kimi",
+      "actualProvider": "kimi",
+      "actualModel": "kimi-k3",
+      "status": "passed",
+      "metrics": {
+        "inputTokens": 14200,
+        "outputTokens": 136,
+        "totalSeconds": 13.7,
+        "ttftSeconds": 9.11
+      }
+    },
+    {
+      "id": "T4",
+      "scenario": "100k-item TypeScript batch classification optimized for cost and throughput",
+      "expectedProvider": "volcengine",
+      "actualProvider": "volcengine",
+      "actualModel": "GLM-5.3",
+      "status": "passed"
+    },
+    {
+      "id": "T5",
+      "scenario": "uploaded-image text and spatial-relation understanding",
+      "expectedProvider": "antigravity",
+      "actualProvider": "antigravity",
+      "actualModel": "gemini-3.5-flash",
+      "tool": "read_image",
+      "expectedFacts": [
+        "ROUTE TEST 824",
+        "red circle is right of blue rectangle"
+      ],
+      "actualFactsCorrect": true,
+      "status": "passed"
+    },
+    {
+      "id": "T6",
+      "scenario": "image generation",
+      "expectedModel": "gemini-3.1-flash-image",
+      "actualModel": "gemini-3.1-flash-image",
+      "upstreamError": "429 QUOTA",
+      "routingStatus": "passed",
+      "artifactStatus": "not_generated",
+      "status": "blocked_by_upstream_quota"
+    },
+    {
+      "id": "T6R",
+      "scenario": "feed an exact image-model quota failure back to capacity",
+      "actualCapacitySource": "runtime-feedback",
+      "actualAvailability": "unavailable",
+      "actualRatio": 0,
+      "status": "passed"
+    },
+    {
+      "id": "T6F",
+      "scenario": "repeat image generation while exact model is cooling down",
+      "expectedBehavior": "fail closed before upstream call",
+      "actualBehavior": "fail closed before upstream call",
+      "status": "passed"
+    },
+    {
+      "id": "T7",
+      "scenario": "simple text while image model is cooling down",
+      "expectedModel": "gemini-3.5-flash",
+      "actualModel": "gemini-3.5-flash",
+      "status": "passed"
+    },
+    {
+      "id": "T8",
+      "scenario": "video generation with no registered video-generation model",
+      "expectedBehavior": "fail closed",
+      "actualBehavior": "fail closed",
+      "status": "passed"
+    }
+  ],
+  "knownLimitations": [
+    {
+      "priority": "P0",
+      "id": "image-artifact-not-accepted",
+      "description": "The image model was selected correctly but no image artifact was generated because its upstream quota was exhausted."
+    },
+    {
+      "priority": "P1",
+      "id": "volatile-runtime-feedback",
+      "description": "Runtime feedback is stored in memory and is lost after restart."
+    },
+    {
+      "priority": "P1",
+      "id": "hidden-exact-image-quota",
+      "description": "Antigravity shared quota does not expose the exact image model quota."
+    },
+    {
+      "priority": "P1",
+      "id": "heuristic-classification",
+      "description": "Task classification remains primarily heuristic and requires evaluation-driven calibration."
+    },
+    {
+      "priority": "P1",
+      "id": "cold-capacity-refresh",
+      "description": "A cold capacity refresh was observed at approximately 3.25 seconds."
+    },
+    {
+      "priority": "P2",
+      "id": "fixed-feedback-cooldown",
+      "description": "The default five-minute cooldown may not match the provider reset time."
+    },
+    {
+      "priority": "P2",
+      "id": "benchmark-v2-runner",
+      "description": "The version-two JSON cases are not yet wired into the benchmark runner."
+    },
+    {
+      "priority": "P2",
+      "id": "volcengine-reasoning-presentation",
+      "description": "A long reasoning presentation was observed while the Volcengine request was pending; adapter channel mapping should be reviewed."
+    }
+  ],
+  "recommendedNextActions": [
+    "Rerun T6 after image quota recovery and validate the generated artifact",
+    "Persist runtime feedback and expire it by resetAt",
+    "Implement stale-while-revalidate and startup warm-up for capacity sources",
+    "Wire benchmark/routing-test-cases-v2.zh-CN.json into the benchmark runner",
+    "Expose a routing decision card in the DSH UI",
+    "Calibrate routing weights from labeled live trajectories and confusion matrices"
+  ]
+}

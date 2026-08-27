@@ -172,7 +172,7 @@ index 3a03058be973caaadeef5876332dc0796756920e..a37a98e3c13acb24043c196c982f6a1c
  
        for (const endpoint of endpointCandidates()) {
          setLastEndpoint(endpoint);
-@@ -2664,11 +2721,13 @@ async function* requestAntigravityChunks(options, model, signal, store) {
+@@ -2664,11 +2721,20 @@ async function* requestAntigravityChunks(options, model, signal, store) {
  export class AntigravityAdapter extends LlmAdapter {
    #store;
    #modelSettings;
@@ -185,9 +185,16 @@ index 3a03058be973caaadeef5876332dc0796756920e..a37a98e3c13acb24043c196c982f6a1c
      this.#modelSettings = modelSettings;
 +    this.#resolveAttachments = resolveAttachments;
    }
++
++  async prepareCall(provider, model, signal) {
++    return {
++      model: await this.resolveModel(provider, model, signal),
++      stream: (options) => this.stream(options),
++    };
++  }
  
    providerInfo(provider) {
-@@ -2711,7 +2770,12 @@ export class AntigravityAdapter extends LlmAdapter {
+@@ -2711,7 +2777,12 @@ export class AntigravityAdapter extends LlmAdapter {
      const upstream =
        options.signal === undefined ? consumer.signal : AbortSignal.any([options.signal, consumer.signal]);
      const watchdog = idleWatchdog(upstream, STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_CODE);
@@ -201,7 +208,7 @@ index 3a03058be973caaadeef5876332dc0796756920e..a37a98e3c13acb24043c196c982f6a1c
  
      let exhausted = false;
      try {
-@@ -3024,7 +3088,7 @@ function registerWebApi(ctx, store, modelSettings) {
+@@ -3024,7 +3095,7 @@ function registerWebApi(ctx, store, modelSettings) {
  export function apply(ctx) {
    const store = new FileCredentialStore(credentialPath());
    const modelSettings = new FileModelSettingsStore(modelSettingsPath());
