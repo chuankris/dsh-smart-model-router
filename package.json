@@ -1,6 +1,6 @@
 {
   "name": "dsh-smart-model-router",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "Task- and quota-aware virtual Auto model router for DeepSeek Harness",
   "type": "module",
   "engines": {

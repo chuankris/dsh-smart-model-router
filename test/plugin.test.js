@@ -90,7 +90,10 @@ test('image recommendation timeout fails clearly when tools are forbidden', asyn
     const agent = { session: { deriveMessages: () => [{ role: 'user', content: [{ type: 'text', text: '生成一张蓝色方块 PNG 图片，不使用工具。' }] }] } }
     await assert.rejects(
       () => h.listener({ agent, step: 1 }, () => Promise.resolve({ provider: 'dsh-auto', model: 'dynamic' })),
-      /tools were explicitly forbidden/,
+      error => {
+        assert.equal((error.message.match(/tools were explicitly forbidden/gi) ?? []).length, 1)
+        return true
+      },
     )
   } finally { globalThis.fetch = originalFetch }
 })

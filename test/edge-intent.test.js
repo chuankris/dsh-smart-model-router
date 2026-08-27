@@ -45,3 +45,23 @@ test('negated video generation remains understanding rather than generation', ()
 
   assert.equal(request('生成一个十秒产品视频。').required.videoGeneration, true)
 })
+
+test('explicit quota-unavailable instruction disables tool-assisted image fallback', () => {
+  const strictFailure = request('生成一张蓝色圆形图片；如果图片模型额度不可用，请直接说明并停止。')
+  const normal = request('生成一张蓝色圆形图片。')
+
+  assert.equal(strictFailure.required.imageGeneration, true)
+  assert.equal(strictFailure.executionPolicy.allowToolAssisted, false)
+  assert.equal(normal.executionPolicy.allowToolAssisted, true)
+})
+
+test('constrained retry inherits the preceding image task and its new failure policy', () => {
+  const result = capacityRequest([
+    user('请生成一张 1024×1024 PNG 图片：纯白背景中央蓝色圆形。'),
+    user('再试一次；如果图片模型额度不可用，请直接说明并停止，不要使用任何工具辅助生成。'),
+  ], { step: 1 })
+
+  assert.equal(result.requestType, 'image-generation')
+  assert.equal(result.required.imageGeneration, true)
+  assert.equal(result.executionPolicy.allowToolAssisted, false)
+})

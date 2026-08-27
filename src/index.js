@@ -83,6 +83,8 @@ function taskText(messages) {
     })
     .map(messageText).map(value => value.trim()).filter(Boolean)
   const latest = userTexts.at(-1) ?? messageText(messages.at(-1))
+  const retriesPreviousTask = /^(?:(?:再试(?:一次|一下)?|重试|继续(?:刚才|上面|这个)?|重新试(?:一次|一下)?)(?=$|[\s，。；、,:;!?！？])|(?:try\s+again|retry|continue)\b)/i.test(latest)
+  if (retriesPreviousTask && userTexts.length >= 2) return `${userTexts.at(-2)}\nFollow-up: ${latest}`
   if (latest.length >= 32 || userTexts.length < 2) return latest
   return `${userTexts.at(-2)}\nFollow-up: ${latest}`
 }
@@ -116,6 +118,8 @@ export function capacityRequest(messages = [], step = {}) {
     && /(?:官方|第一方|直接链接|核对|验证|发布日期|不得.{0,8}推断|official|primary source|direct links?|verify|publication date|must open)/i.test(groundingIntentText)
   const structuredOutput = /(?:json|schema|结构化输出)/i.test(text)
   const noTools = /(?:不|不要|无需|不需要|禁止).{0,8}(?:调用|使用).{0,6}工具|(?:without|no)\s+tools?/i.test(text)
+  const noToolAssistedFallback = noTools
+    || /(?:如果|若|一旦).{0,24}(?:图片|图像|image).{0,16}(?:模型|额度|配额|quota).{0,16}(?:不可用|不足|耗尽|用完|unavailable|exhausted|reached).{0,16}(?:直接|只需|请|就).{0,8}(?:说明|告知|报错|失败|停止|stop|fail|tell)/i.test(text)
   const hasToolHistory = messages.some(message => contentBlocks(message).some(block => ['tool-result', 'tool_result', 'tool-call', 'tool_call'].includes(block?.type)))
   const toolUse = !noTools && (hasToolHistory || /(?:调用|使用).{0,6}工具|agent|执行|修改|实现|运行测试|终端|浏览器/i.test(text))
   const inputModalities = ['image', 'audio', 'video', 'pdf'].filter(modality => hasInputModality(messages, modality))
@@ -192,7 +196,7 @@ export function capacityRequest(messages = [], step = {}) {
     required: Object.fromEntries(Object.entries(required).filter(([, value]) => value !== undefined)),
     weights,
     classifier: { mode: 'shadow', ...classifier, gate: classifierRolloutGate(classifier) },
-    executionPolicy: executionPolicy(requestType, { allowToolAssisted: !noTools }),
+    executionPolicy: executionPolicy(requestType, { allowToolAssisted: !noToolAssistedFallback }),
     ...(providers ? { providers } : {}),
   }
 }
@@ -392,9 +396,12 @@ export function apply(ctx, config) {
           const assisted = await toolAssistedFallback(error)
           if (assisted) return assisted
         }
+        const errorMessage = String(error?.message ?? error)
         const detail = request.executionPolicy?.allowToolAssisted
-          ? `${error?.message ?? error}; no tool-assisted model is registered`
-          : `${error?.message ?? error}; tools were explicitly forbidden`
+          ? `${errorMessage}; no tool-assisted model is registered`
+          : /tools were explicitly forbidden/i.test(errorMessage)
+            ? errorMessage
+            : `${errorMessage}; tools were explicitly forbidden`
         throw new Error(`smart-model-router: ${request.requestType} unavailable: ${detail}`)
       }
       if (contextRequired) {
