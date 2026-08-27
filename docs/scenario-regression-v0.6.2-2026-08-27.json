@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "version": "0.6.2",
+  "date": "2026-08-27",
+  "dshBuild": "141eb6f",
+  "automated": {
+    "unit": { "passed": 35, "total": 35 },
+    "legacyBenchmark": { "passed": 12, "total": 12 },
+    "scenarioBenchmark": { "passed": 6, "total": 6 },
+    "classifierBenchmark": { "passed": 16, "total": 16 }
+  },
+  "liveScenarios": [
+    { "id": "T1", "type": "simple-text", "selected": "antigravity/gemini-3.5-flash", "routePassed": true, "executionPassed": true },
+    { "id": "T2", "type": "production-coding-no-tools", "selected": "codex-chatgpt/gpt-5.6-sol", "routePassed": true, "executionPassed": true },
+    { "id": "T3", "type": "long-context-zh", "selected": "kimi/kimi-k3", "routePassed": true },
+    { "id": "T4", "type": "batch-coding", "selected": "volcengine/GLM-5.3", "routePassed": true },
+    { "id": "T5", "type": "grounded-research", "selected": "antigravity/gemini-3.5-flash", "routePassed": true },
+    {
+      "id": "T6",
+      "type": "multimodal-understanding",
+      "selected": "antigravity/gemini-3.5-flash",
+      "requestType": "multimodal-understanding",
+      "requiredModalities": ["image"],
+      "classifierLabel": "multimodal-understanding",
+      "routePassed": true,
+      "executionPassed": true,
+      "elapsedSeconds": 68,
+      "intermediateSubagentFailures": 1
+    }
+  ],
+  "fixedDefects": [
+    "no-tools instruction contradicted by gptAffinity tool requirement",
+    "negated image generation classified as positive generation",
+    "DSH uploaded file paths ignored as input modalities"
+  ],
+  "remaining": [
+    "native multimodal attachment path versus read_image tool path comparison",
+    "audio, video, and PDF real attachment acceptance",
+    "grounded answer source-quality acceptance",
+    "subagent retry latency and reliability measurement"
+  ]
+}

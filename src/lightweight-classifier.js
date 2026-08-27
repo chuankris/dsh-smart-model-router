@@ -17,8 +17,9 @@ const round = value => Number(value.toFixed(6))
 export function classifyTask({ text = '', inputModalities = [] } = {}) {
   const logits = Object.fromEntries(LABELS.map(label => [label, label === 'general-text' ? 0.35 : 0]))
   const matchedFeatures = []
+  const imageIntentText = text.replace(/(?:不需要|不要|无需|禁止|不)\s*(?:再|直接|重新)?\s*(?:生成|创建|绘制|画|设计|制作).{0,24}(?:图片|图像|插画|海报|头像|封面)|(?:do\s+not|don't|without)\s+(?:(?:ever|directly|again)\s+)?(?:generate|create|draw|render|design).{0,24}(?:image|picture|illustration|poster|avatar)/gi, '')
   for (const feature of FEATURES) {
-    if (!feature.pattern.test(text)) continue
+    if (!feature.pattern.test(feature.id === 'image-output' ? imageIntentText : text)) continue
     matchedFeatures.push(feature.id)
     for (const [label, weight] of Object.entries(feature.weights)) logits[label] += weight
   }
